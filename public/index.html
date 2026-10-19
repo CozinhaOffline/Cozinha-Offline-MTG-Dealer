@@ -1,0 +1,869 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Plataforma MTG Dealer - Versão Básica</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<style>
+  :root {
+    --azul: #1a3a6b;
+    --vermelho: #c41e3a;
+    --azul-claro: #2d5aa0;
+    --fundo: #f4f6f9;
+    --card: #ffffff;
+    --texto: #1a1a1a;
+    --borda: #d0d5dd;
+  }
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: var(--fundo); color: var(--texto); margin: 0; padding: 0; }
+  header { background: linear-gradient(135deg, var(--azul), var(--vermelho)); color: white; padding: 1.2rem 2rem; box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
+  header h1 { margin: 0; font-size: 1.6rem; }
+  header p { margin: 0.3rem 0 0; opacity: 0.9; font-size: 0.95rem; }
+  nav { background: white; border-bottom: 1px solid var(--borda); padding: 0 1rem; display: flex; gap: 0.5rem; flex-wrap: wrap; }
+  nav button { background: none; border: none; padding: 0.9rem 1.2rem; font-size: 0.95rem; cursor: pointer; color: var(--azul); border-bottom: 3px solid transparent; }
+  nav button.active { border-bottom-color: var(--vermelho); font-weight: 600; color: var(--vermelho); }
+  main { padding: 1.5rem 2rem; max-width: 1600px; margin: 0 auto; }
+  .tab { display: none; }
+  .tab.active { display: block; }
+  .card { background: var(--card); border-radius: 10px; padding: 1.5rem; margin-bottom: 1.5rem; box-shadow: 0 1px 4px rgba(0,0,0,0.08); border: 1px solid var(--borda); }
+  h2 { margin-top: 0; color: var(--azul); }
+  h3 { color: var(--azul-claro); }
+  label { display: block; margin: 0.6rem 0 0.3rem; font-weight: 500; }
+  input, select, textarea, button { font-family: inherit; font-size: 0.95rem; }
+  input[type="text"], input[type="number"], select, textarea { width: 100%; padding: 0.6rem 0.8rem; border: 1px solid var(--borda); border-radius: 6px; background: white; }
+  textarea { min-height: 100px; resize: vertical; }
+  button.primary, button.secondary { padding: 0.65rem 1.2rem; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; margin-top: 0.4rem; margin-right: 0.4rem; }
+  button.primary { background: var(--vermelho); color: white; }
+  button.primary:hover { background: #a31830; }
+  button.secondary { background: var(--azul); color: white; }
+  button.secondary:hover { background: #152e55; }
+  button.small { padding: 0.35rem 0.7rem; font-size: 0.85rem; }
+  table { width: 100%; border-collapse: collapse; margin-top: 1rem; font-size: 0.85rem; }
+  th, td { padding: 0.45rem 0.5rem; text-align: left; border-bottom: 1px solid var(--borda); vertical-align: middle; }
+  th { background: #f0f4fa; color: var(--azul); font-weight: 600; position: sticky; top: 0; }
+  tr:hover { background: #fafbfc; }
+  .badge { display: inline-block; padding: 0.12rem 0.45rem; border-radius: 4px; font-size: 0.72rem; font-weight: 700; color: white; }
+  .badge.A { background: #16a34a; }
+  .badge.B { background: #ca8a04; }
+  .badge.C { background: #ea580c; }
+  .badge.D { background: #6b7280; }
+  .alert { padding: 0.8rem 1rem; border-radius: 6px; margin: 1rem 0; background: #eff6ff; border-left: 4px solid var(--azul); }
+  .filters { display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: end; margin-bottom: 1rem; }
+  .filters > div { flex: 1; min-width: 140px; }
+  .filters input, .filters select { margin: 0; }
+  .edit-input { width: 100%; padding: 0.3rem 0.4rem; font-size: 0.82rem; }
+  .stats { display: flex; gap: 1rem; flex-wrap: wrap; margin: 1rem 0; }
+  .stat { background: #f0f4fa; padding: 0.8rem 1rem; border-radius: 8px; min-width: 120px; text-align: center; }
+  .stat strong { display: block; font-size: 1.3rem; color: var(--azul); }
+  .muted { color: #666; font-size: 0.85rem; }
+  .row { display: flex; gap: 1rem; flex-wrap: wrap; }
+  .col { flex: 1; min-width: 220px; }
+  .checkbox-col { width: 36px; text-align: center; }
+  #tableContainer { max-height: 70vh; overflow: auto; border: 1px solid var(--borda); border-radius: 8px; }
+  .autocomplete { position: relative; }
+  .autocomplete-list {
+    position: absolute; top: 100%; left: 0; right: 0; background: white; border: 1px solid var(--borda);
+    border-radius: 0 0 6px 6px; max-height: 220px; overflow-y: auto; z-index: 100; box-shadow: 0 4px 12px rgba(0,0,0,0.1); display: none;
+  }
+  .autocomplete-list div { padding: 0.45rem 0.7rem; cursor: pointer; font-size: 0.9rem; }
+  .autocomplete-list div:hover, .autocomplete-list div.active { background: #eff6ff; }
+  .card-popup {
+    position: fixed; background: white; border: 1px solid var(--borda); border-radius: 10px; padding: 0.8rem;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.18); z-index: 2000; width: 240px; max-height: 80vh; overflow-y: auto;
+    display: none; pointer-events: none; box-sizing: border-box;
+  }
+  .card-popup img { width: 100%; max-height: 280px; object-fit: contain; border-radius: 6px; margin-bottom: 0.5rem; }
+  .card-popup strong { color: var(--azul); }
+
+</style>
+</head>
+<body>
+<header>
+  <h1>Plataforma MTG Dealer</h1>
+  <p>Versão básica para testes — estoque, custos, PVS, orçamentos e avaliador de listas</p>
+</header>
+<nav>
+  <button class="active" data-tab="estoque">Estoque</button>
+  <button data-tab="custos">Custos e PVS</button>
+  <button data-tab="orcamento">Orçamento</button>
+  <button data-tab="avaliador">Avaliador de Listas</button>
+  <button data-tab="ajuda">Ajuda</button>
+</nav>
+<main>
+  <div id="estoque" class="tab active">
+    <div class="card">
+      <h2>Importar estoque</h2>
+      <div class="row">
+        <div class="col">
+          <label>Tipo de arquivo</label>
+          <select id="csvType">
+            <option value="manabox">Manabox CSV</option>
+            <option value="ligamagic">Ligamagic CSV (Coleções)</option>
+          </select>
+        </div>
+        <div class="col">
+          <label>Arquivo CSV</label>
+          <input type="file" id="csvFile" accept=".csv,.txt">
+        </div>
+      </div>
+      <div class="alert">
+        <strong>Manabox:</strong> Collection → menu → Export → CSV.<br>
+        <strong>Ligamagic:</strong> Exporte a coleção no formato “Padrão LigaMagic CSV [Modelo para Coleções]”.<br>
+        <button class="secondary small" onclick="carregarExemplo()">Carregar dados de exemplo (para testar)</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Busca, filtros e ordenação</h2>
+      <div class="filters">
+        <div class="autocomplete"><label>Busca (nome)</label><input type="text" id="fNome" placeholder="Nome da carta..." autocomplete="off"><div class="autocomplete-list" id="acNome"></div></div>
+        <div class="autocomplete"><label>Edição / Set</label><input type="text" id="fSet" placeholder="Edição ou código..." autocomplete="off"><div class="autocomplete-list" id="acSet"></div></div>
+        <div><label>Pasta / Coleção</label><input type="text" id="fPasta" placeholder="Pasta..."></div>
+        <div><label>Condição</label><select id="fCond"><option value="">Todas</option><option>NM</option><option>SP</option><option>MP</option><option>HP</option><option>D</option><option>Near Mint</option><option>Lightly Played</option></select></div>
+        <div><label>Extras</label><input type="text" id="fExtras" placeholder="Foil, Showcase..."></div>
+        <div><label>Qtd mín.</label><input type="number" id="fQtdMin" min="0" placeholder="0"></div>
+        <div><label>Ordenar por</label>
+          <select id="fSort">
+            <option value="nome-az">Nome A → Z</option>
+            <option value="nome-za">Nome Z → A</option>
+            <option value="qtd-desc">Quantidade ↓</option>
+            <option value="qtd-asc">Quantidade ↑</option>
+            <option value="ml-desc">ML maior → menor</option>
+            <option value="ml-asc">ML menor → maior</option>
+            <option value="pvs-desc">PVS maior → menor</option>
+            <option value="pvs-asc">PVS menor → maior</option>
+          </select>
+        </div>
+      </div>
+      <button class="secondary small" onclick="aplicarFiltros()">Aplicar filtros</button>
+      <button class="secondary small" onclick="limparFiltros()">Limpar</button>
+    </div>
+
+    <div class="card">
+      <h2>Edição em massa (linhas marcadas)</h2>
+      <div class="filters">
+        <div><label>Campo</label>
+          <select id="bulkField">
+            <option value="set">Edição</option>
+            <option value="cond">Condição</option>
+            <option value="lang">Idioma</option>
+            <option value="extras">Extras</option>
+            <option value="pasta">Pasta</option>
+            <option value="ml">ML (R$)</option>
+            <option value="custo">Custo (R$)</option>
+            <option value="pvs">PVS (R$)</option>
+            <option value="liquidez">Liquidez</option>
+          </select>
+        </div>
+        <div><label>Novo valor</label><input type="text" id="bulkValue" placeholder="Valor a aplicar..."></div>
+        <div style="align-self:end;"><button class="primary small" onclick="aplicarBulk()">Aplicar nas marcadas</button></div>
+      </div>
+      <p class="muted">Marque as linhas com o checkbox e aplique o mesmo valor. Combine com os filtros acima (ex.: filtre foils de uma pasta e edite só elas).</p>
+    </div>
+
+    <div class="card">
+      <h2>Estoque atual</h2>
+      <div id="estoqueStats" class="stats"></div>
+      <div id="tableContainer">
+        <table id="estoqueTable">
+          <thead>
+            <tr>
+              <th class="checkbox-col"><input type="checkbox" id="selectAll" onchange="toggleSelectAll(this)"></th>
+              <th>Qtd</th>
+              <th>Nome</th>
+              <th>Edição</th>
+              <th>Condição</th>
+              <th>Idioma</th>
+              <th>Extras</th>
+              <th>Pasta</th>
+              <th>ML (R$)</th>
+              <th>Custo (R$)</th>
+              <th>PVS (R$)</th>
+              <th>Liquidez</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p class="muted" id="estoqueEmpty">Nenhum estoque carregado ainda. Importe um CSV acima.</p>
+    </div>
+  </div>
+
+  <!-- Abas restantes (mantidas simplificadas) -->
+  <div id="custos" class="tab">
+    <div class="card">
+      <h2>Calcular custo de aquisição de um lote</h2>
+      <div class="row">
+        <div class="col"><label>Valor total pago pelo lote (R$)</label><input type="number" id="lotePago" step="0.01"></div>
+        <div class="col"><label>Pasta / lote (opcional)</label><input type="text" id="lotePasta" placeholder="Deixe vazio para todo estoque"></div>
+      </div>
+      <button class="primary" onclick="calcularCustoLote()">Calcular e aplicar custos</button>
+      <div id="custoResultado"></div>
+    </div>
+  </div>
+  <div id="orcamento" class="tab">
+    <div class="card">
+      <h2>Calculadora de orçamento</h2>
+      <textarea id="listaOrcamento" placeholder="1 Sol Ring&#10;1 Arcane Signet&#10;..."></textarea>
+      <div class="row">
+        <div class="col"><label>Nome do cliente</label><input type="text" id="clienteNome"></div>
+        <div class="col"><label>Título do lote / deck</label><input type="text" id="loteTitulo"></div>
+      </div>
+      <button class="primary" onclick="gerarOrcamento()">Gerar orçamento</button>
+      <button class="secondary" onclick="gerarPDF()" id="btnPDF" style="display:none;">Baixar PDF</button>
+      <div id="orcamentoResultado" style="display:none; margin-top:1rem;">
+        <div id="orcamentoTabela"></div>
+        <div id="orcamentoTotal" style="margin-top:1rem; font-size:1.15rem; font-weight:bold;"></div>
+      </div>
+    </div>
+  </div>
+  <div id="avaliador" class="tab">
+    <div class="card">
+      <h2>Avaliador de listas</h2>
+      <label>Nome do comandante ou tema</label>
+      <input type="text" id="avalNome">
+      <label>Lista (ex: 1 Sol Ring | 8.50)</label>
+      <textarea id="avalLista"></textarea>
+      <button class="primary" onclick="avaliarLista()">Avaliar lista</button>
+      <div id="avalResultado" style="display:none; margin-top:1rem;">
+        <h2 id="avalTitulo"></h2>
+        <div id="avalConteudo"></div>
+      </div>
+    </div>
+  </div>
+  <div id="ajuda" class="tab">
+    <div class="card">
+      <h2>Como usar</h2>
+      <ul>
+        <li>Importe CSV do Manabox ou da Ligamagic.</li>
+        <li>Use busca, filtros e ordenação.</li>
+        <li>Marque linhas e edite em massa, ou edite célula a célula.</li>
+        <li>A liquidez é atribuída automaticamente na importação (regras + lista de staples conhecidos). Em versões futuras pode integrar consultas diretas ao EDHREC/Archidekt.</li>
+      </ul>
+      <div class="alert">A classificação automática usa uma lista de staples universais de Commander + regras por valor e tipo. Você pode ajustar manualmente qualquer carta.</div>
+    </div>
+  </div>
+</main>
+
+<script>
+const { jsPDF } = window.jspdf;
+let estoque = [];
+let filtered = [];
+let orcamentoAtual = null;
+
+// Staples universais de alta liquidez (A) — Commander
+const STAPLES_A = [
+  'sol ring','arcane signet','command tower','swiftfoot boots','lightning greaves',
+  'rhystic study','smothering tithe','dockside extortionist','mana crypt','jeweled lotus',
+  'cyclonic rift','demonic tutor','vampiric tutor','teferi\'s protection','force of will',
+  'mana drain','fierce guardianship','deflecting swat','deadly rollick','flawless maneuver',
+  'esper sentinel','mystic remora','seedborn muse','craterhoof behemoth','the great henge',
+  'necropotence','ad nauseam','underworld breach','thassa\'s oracle','path to exile',
+  'swords to plowshares','counterspell','negate','mana vault','chrome mox','mox diamond',
+  'ancient tomb','cabal coffers','gaea\'s cradle','urborg, tomb of yawgmoth','bloodstained mire',
+  'polluted delta','flooded strand','wooded foothills','windswept heath','marsh flats',
+  'arid mesa','scalding tarn','misty rainforest','verdant catacombs','prismatic vista',
+  'fabled passage','command beacon','homeward path','strip mine','wasteland','anointed procession',
+  'doubling season','parallel lives','ashnod\'s altar','phyrexian altar','grim monolith',
+  'basalt monolith','mana confluence','city of brass','reflecting pool','exotic orchard',
+  'three visits','nature\'s lore','farseek','rampant growth','cultivate','kodama\'s reach',
+  'birds of paradise','llanowar elves','elvish mystic','ignoble hierarch','noble hierarch',
+  'bowmasters','opposition agent','drannith magistrate','arcane denial','swan song',
+  'an offer you can\'t refuse','force of negation','silence','grand abolisher',
+  'teferi, time raveler','narset, parter of veils','rhystic study'
+];
+
+// Cartas de liquidez média (B) — boas mas dependentes de contexto/arquétipo
+const STAPLES_B = [
+  'blood artist','zulaport cutthroat','viscera seer','carrion feeder','gravecrawler',
+  'phyrexian arena','necrotic ooze','reanimate','animate dead','entomb','buried alive',
+  'living death','rise of the dark realms','mikaeus, the unhallowed','triskelion',
+  'walking ballista','heliod, sun-crowned','spike feeder','archangel of thune',
+  'brago, king eternal','soulherder','ephemerate','ghostly flicker','restoration angel',
+  'kiki-jiki, mirror breaker','zealous conscripts','pestermite','deceiver exarch',
+  'splinter twin','exquisite blood','sanguine bond','aetherflux reservoir','bolas\'s citadel',
+  'sensei\'s divining top','scroll rack','mystic forge','urza, lord high artificer',
+  'sai, master thopterist','padeem, consul of innovation','emry, lurker of the loch',
+  'elesh norn, grand cenobite','vorinclex, voice of hunger','jin-gitaxias, core augur',
+  'kozilek, butcher of truth','ulamog, the ceaseless hunger','emrakul, the aeons torn',
+  'cloudstone curio','impact tremors','purphoros, god of the forge','terror of the peaks',
+  'beast whisperer','guardian project','rite of replication','tooth and nail',
+  'green sun\'s zenith','chord of calling','eldritch evolution','neoform','protean hulk',
+  'blasphemous act','toxic deluge','damnation','wrath of god','supreme verdict','farewell'
+];
+
+function getField(row, keys) {
+  for (const k of keys) {
+    if (row[k] !== undefined && row[k] !== null && String(row[k]).trim() !== '') return String(row[k]).trim();
+  }
+  const lower = {};
+  Object.keys(row).forEach(key => { lower[key.toLowerCase().trim()] = row[key]; });
+  for (const k of keys) {
+    const lk = k.toLowerCase().trim();
+    if (lower[lk] !== undefined && String(lower[lk]).trim() !== '') return String(lower[lk]).trim();
+  }
+  return '';
+}
+
+function classificarLiquidez(nome, extras, ml) {
+  const n = (nome || '').toLowerCase().trim();
+  const isPimp = /foil|showcase|borderless|extended art|full art|textless|etched/i.test(extras || '');
+  const isBasic = /^(island|swamp|mountain|forest|plains|wastes)/i.test(n) || n.includes('basic land');
+
+  if (STAPLES_A.some(s => n.includes(s))) return isPimp ? 'B' : 'A';
+  if (STAPLES_B.some(s => n.includes(s))) return isPimp ? 'C' : 'B';
+  if (isBasic) return 'D';
+
+  if (ml >= 30 && !isPimp) return 'B';
+  if (ml >= 10 && !isPimp) return 'C';
+  if (ml >= 2) return isPimp ? 'D' : 'C';
+  return 'D';
+}
+
+document.getElementById('csvFile').addEventListener('change', function(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const type = document.getElementById('csvType').value;
+
+  const reader = new FileReader();
+  reader.onload = function(ev) {
+    try {
+      const text = ev.target.result;
+      // Detecta delimitador (vírgula ou ponto-e-vírgula)
+      const firstLine = text.split(/\r?\n/)[0] || '';
+      const delimiter = (firstLine.split(';').length > firstLine.split(',').length) ? ';' : ',';
+
+      Papa.parse(text, {
+      header: true,
+      skipEmptyLines: true,
+      delimiter: delimiter,
+      complete: function(results) {
+        if (!results.data || results.data.length === 0) {
+          alert('Nenhuma linha válida encontrada no arquivo. Verifique se é um CSV válido.');
+          return;
+        }
+        estoque = results.data.map(row => {
+          let nome, qtd, set, setCode = '', cond, lang, extras, foil, pasta, ml = 0, scryfallId = '';
+          if (type === 'ligamagic') {
+            nome = getField(row, ['Card (EN)', 'Card (PT)', 'Card', 'Nome', 'Name', 'Card Name', 'CardName']);
+            qtd = parseInt(getField(row, ['Quantidade', 'Quantity', 'Qty', 'Qtd', 'Qtde'])) || 1;
+            set = getField(row, ['Edicao (EN)', 'Edicao (PTBR)', 'Edicao', 'Set Name', 'Set', 'Edição']);
+            setCode = getField(row, ['Edicao (Sigla)', 'Sigla', 'Set Code', 'Setcode']);
+            if (setCode && !set) set = setCode;
+            else if (setCode && set && !set.includes(setCode)) set = set + ' (' + setCode + ')';
+            cond = getField(row, ['Qualidade (M NM SP MP HP D)', 'Qualidade', 'Condition', 'Condição', 'Estado']) || 'NM';
+            lang = getField(row, ['Idioma (BR EN DE ES FR IT JP KO RU TW)', 'Idioma', 'Language', 'Lang']) || 'EN';
+            extras = getField(row, ['Extras', 'Extra', 'Foil']);
+            foil = /foil|true|yes|1/i.test(extras || '');
+            pasta = getField(row, ['Coleção', 'Colecao', 'Pasta', 'Binder', 'Folder']) || 'Ligamagic';
+            const mlRaw = getField(row, ['Menor P. Compra', 'Menor Preço', 'Menor Preco', 'ML', 'Preço', 'Preco', 'Menor']);
+            ml = parseFloat((mlRaw || '0').replace(',', '.')) || 0;
+          } else {
+            // Manabox
+            nome = getField(row, ['Name', 'Card Name', 'Card name', 'Nome', 'name', 'CardName', 'Simple Name']);
+            qtd = parseInt(getField(row, ['Quantity', 'Qty', 'Count', 'Qtd', 'Qtde', 'Total Quantity'])) || 1;
+            set = getField(row, ['Set name', 'Set Name', 'Set', 'Edition', 'Edição', 'Setname', 'Edition Name']);
+            setCode = getField(row, ['Set code', 'Set Code', 'Setcode', 'SetCode', 'Edition Code', 'Set_code']);
+            scryfallId = getField(row, ['Scryfall ID', 'ScryfallID', 'Scryfall Id', 'scryfall_id']);
+            // Mapeamento de nomes comuns de sets de Commander para códigos
+            if (!setCode && set) {
+              const setMap = {
+                'commander 2013': 'c13', 'commander 2014': 'c14', 'commander 2015': 'c15',
+                'commander 2016': 'c16', 'commander 2017': 'c17', 'commander 2018': 'c18',
+                'commander 2019': 'c19', 'commander 2020': 'c20', 'commander 2021': 'c21',
+                'modern horizons 3': 'mh3', 'modern horizons 2': 'mh2', 'modern horizons': 'mh1',
+                'commander legends': 'cmr', 'commander masters': 'cmm'
+              };
+              const lowerSet = set.toLowerCase();
+              for (const [key, code] of Object.entries(setMap)) {
+                if (lowerSet.includes(key)) { setCode = code; break; }
+              }
+            }
+            // Fallback: extrai código do set name se necessário
+            if (!setCode && set) {
+              const m = set.match(/\(([a-z0-9]{3,5})\)/i);
+              if (m) setCode = m[1];
+            }
+            if (setCode && set && !set.toLowerCase().includes(setCode.toLowerCase())) {
+              set = set + ' (' + setCode + ')';
+            } else if (setCode && !set) {
+              set = setCode;
+            }
+            cond = getField(row, ['Condition', 'Condição', 'Qualidade', 'Estado']) || 'NM';
+            lang = getField(row, ['Language', 'Idioma', 'Lang']) || 'EN';
+            const foilRaw = getField(row, ['Foil']);
+            foil = /true|yes|1|foil/i.test(foilRaw || '');
+            extras = foil ? 'Foil' : getField(row, ['Extras', 'Altered', 'Extra']);
+            pasta = getField(row, ['Binder Name', 'Binder', 'List', 'Folder', 'Pasta', 'Binder name', 'BinderName']) || 'Geral';
+          }
+          if (!nome) return null;
+          const card = {
+            nome: nome.trim(),
+            qtd,
+            set: set || '',
+            setCode: (setCode || '').toLowerCase().trim(),
+            scryfallId: scryfallId || '',
+            cond: cond || 'NM',
+            lang: lang || 'EN',
+            extras: extras || '',
+            foil,
+            pasta: pasta || 'Geral',
+            ml,
+            custo: 0,
+            pvs: 0,
+            liquidez: 'C'
+          };
+          card.liquidez = classificarLiquidez(card.nome, card.extras, card.ml);
+          card.pvs = calcularPVS(card);
+          return card;
+        }).filter(Boolean);
+
+        if (estoque.length === 0) {
+          alert('Nenhuma carta reconhecida. Verifique se o tipo de arquivo está correto e se o CSV tem cabeçalhos.');
+          console.log('Headers encontrados:', results.meta && results.meta.fields);
+          return;
+        }
+        filtered = [...estoque];
+        renderEstoque();
+        initAutocomplete();
+        alert(`${estoque.length} cartas importadas (${type === 'ligamagic' ? 'Ligamagic' : 'Manabox'}). Delimitador usado: "${delimiter}".`);
+      },
+      error: function(err) {
+        alert('Erro ao ler o CSV: ' + (err.message || err));
+      }
+    });
+    } catch (err) {
+      alert('Erro ao processar o arquivo: ' + err.message);
+      console.error(err);
+    }
+  };
+  reader.readAsText(file, 'UTF-8');
+});
+
+function carregarExemplo() {
+  estoque = [
+    {nome:'Sol Ring', qtd:2, set:'Commander Masters (CMM)', setCode:'cmm', cond:'NM', lang:'EN', extras:'', foil:false, pasta:'Geral', ml:8.5, custo:0, pvs:0, liquidez:'A'},
+    {nome:'Arcane Signet', qtd:3, set:'Commander Masters (CMM)', setCode:'cmm', cond:'NM', lang:'EN', extras:'', foil:false, pasta:'Geral', ml:3.2, custo:0, pvs:0, liquidez:'A'},
+    {nome:'Rhystic Study', qtd:1, set:'Commander Masters', setCode:'cmm', cond:'NM', lang:'EN', extras:'', foil:false, pasta:'Staples', ml:42, custo:0, pvs:0, liquidez:'A'},
+    {nome:'Cyclonic Rift', qtd:1, set:'Return to Ravnica', setCode:'rtr', cond:'NM', lang:'EN', extras:'Foil', foil:true, pasta:'Staples', ml:55, custo:0, pvs:0, liquidez:'B'},
+    {nome:'Island', qtd:15, set:'Basic', setCode:'', cond:'NM', lang:'EN', extras:'', foil:false, pasta:'Terrenos', ml:0.15, custo:0, pvs:0, liquidez:'D'},
+    {nome:'Blood Artist', qtd:2, set:'Avacyn Restored', setCode:'avr', cond:'NM', lang:'EN', extras:'', foil:false, pasta:'Geral', ml:4.5, custo:0, pvs:0, liquidez:'B'}
+  ];
+  estoque.forEach(c => {
+    c.liquidez = classificarLiquidez(c.nome, c.extras, c.ml);
+    c.pvs = calcularPVS(c);
+  });
+  filtered = [...estoque];
+  renderEstoque();
+  initAutocomplete();
+  alert('Dados de exemplo carregados. Use os filtros e o hover no nome das cartas.');
+}
+
+function calcularPVS(card) {
+  const ml = card.ml || 0;
+  const custo = card.custo || 0;
+  const mlm = custo * 1.30;
+  let pvs = Math.max(ml, mlm);
+  if (card.liquidez === 'A' && ml > 0) {
+    let mult = 1;
+    if (ml <= 1) mult = 3;
+    else if (ml <= 2) mult = 2.5;
+    else if (ml <= 5) mult = 2;
+    else if (ml <= 10) mult = 1.5;
+    else if (ml <= 50) mult = 1.25;
+    const pvsA = ml * mult;
+    pvs = Math.max(pvs, pvsA);
+  }
+  return Math.round(pvs * 100) / 100;
+}
+
+function aplicarFiltros() {
+  const nome = document.getElementById('fNome').value.toLowerCase();
+  const set = document.getElementById('fSet').value.toLowerCase();
+  const pasta = document.getElementById('fPasta').value.toLowerCase();
+  const cond = document.getElementById('fCond').value.toLowerCase();
+  const extras = document.getElementById('fExtras').value.toLowerCase();
+  const qtdMin = parseInt(document.getElementById('fQtdMin').value) || 0;
+  const sort = document.getElementById('fSort').value;
+
+  filtered = estoque.filter(c => {
+    if (nome && !c.nome.toLowerCase().includes(nome)) return false;
+    if (set && !(c.set || '').toLowerCase().includes(set)) return false;
+    if (pasta && !(c.pasta || '').toLowerCase().includes(pasta)) return false;
+    if (cond && !(c.cond || '').toLowerCase().includes(cond)) return false;
+    if (extras && !(c.extras || '').toLowerCase().includes(extras)) return false;
+    if (c.qtd < qtdMin) return false;
+    return true;
+  });
+
+  filtered.sort((a, b) => {
+    if (sort === 'nome-az') return a.nome.localeCompare(b.nome);
+    if (sort === 'nome-za') return b.nome.localeCompare(a.nome);
+    if (sort === 'qtd-desc') return b.qtd - a.qtd;
+    if (sort === 'qtd-asc') return a.qtd - b.qtd;
+    if (sort === 'ml-desc') return b.ml - a.ml;
+    if (sort === 'ml-asc') return a.ml - b.ml;
+    if (sort === 'pvs-desc') return b.pvs - a.pvs;
+    if (sort === 'pvs-asc') return a.pvs - b.pvs;
+    return 0;
+  });
+  renderEstoque();
+}
+
+function limparFiltros() {
+  document.getElementById('fNome').value = '';
+  document.getElementById('fSet').value = '';
+  document.getElementById('fPasta').value = '';
+  document.getElementById('fCond').value = '';
+  document.getElementById('fExtras').value = '';
+  document.getElementById('fQtdMin').value = '';
+  filtered = [...estoque];
+  renderEstoque();
+}
+
+function renderEstoque() {
+  const tbody = document.querySelector('#estoqueTable tbody');
+  tbody.innerHTML = '';
+  const data = filtered.length ? filtered : estoque;
+  if (data.length === 0 && estoque.length === 0) {
+    document.getElementById('estoqueEmpty').style.display = 'block';
+    document.getElementById('estoqueStats').innerHTML = '';
+    return;
+  }
+  document.getElementById('estoqueEmpty').style.display = 'none';
+  let totalQtd = 0, totalML = 0, totalPVS = 0;
+  data.forEach((c, idx) => {
+    const realIdx = estoque.indexOf(c);
+    totalQtd += c.qtd;
+    totalML += c.ml * c.qtd;
+    totalPVS += c.pvs * c.qtd;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="checkbox-col"><input type="checkbox" class="row-check" data-idx="${realIdx}"></td>
+      <td>${c.qtd}</td>
+      <td>${c.nome}</td>
+      <td><input class="edit-input" data-field="set" data-idx="${realIdx}" value="${c.set || ''}"></td>
+      <td><input class="edit-input" data-field="cond" data-idx="${realIdx}" value="${c.cond || ''}"></td>
+      <td><input class="edit-input" data-field="lang" data-idx="${realIdx}" value="${c.lang || ''}"></td>
+      <td><input class="edit-input" data-field="extras" data-idx="${realIdx}" value="${c.extras || ''}"></td>
+      <td><input class="edit-input" data-field="pasta" data-idx="${realIdx}" value="${c.pasta || ''}"></td>
+      <td><input class="edit-input" data-field="ml" data-idx="${realIdx}" type="number" step="0.01" value="${c.ml}"></td>
+      <td><input class="edit-input" data-field="custo" data-idx="${realIdx}" type="number" step="0.01" value="${c.custo}"></td>
+      <td><input class="edit-input" data-field="pvs" data-idx="${realIdx}" type="number" step="0.01" value="${c.pvs}"></td>
+      <td><select class="edit-input" data-field="liquidez" data-idx="${realIdx}">
+        <option value="A" ${c.liquidez==='A'?'selected':''}>A</option>
+        <option value="B" ${c.liquidez==='B'?'selected':''}>B</option>
+        <option value="C" ${c.liquidez==='C'?'selected':''}>C</option>
+        <option value="D" ${c.liquidez==='D'?'selected':''}>D</option>
+      </select></td>
+    `;
+    tbody.appendChild(tr);
+  });
+  document.getElementById('estoqueStats').innerHTML = `
+    <div class="stat"><strong>${data.length}</strong><span class="muted">Exibindo</span></div>
+    <div class="stat"><strong>${estoque.length}</strong><span class="muted">Total no estoque</span></div>
+    <div class="stat"><strong>${totalQtd}</strong><span class="muted">Qtd (filtro)</span></div>
+    <div class="stat"><strong>R$ ${totalML.toFixed(2)}</strong><span class="muted">Soma ML</span></div>
+    <div class="stat"><strong>R$ ${totalPVS.toFixed(2)}</strong><span class="muted">Soma PVS</span></div>
+  `;
+  // Bind edits
+  document.querySelectorAll('.edit-input').forEach(inp => {
+    inp.addEventListener('change', function() {
+      const idx = parseInt(this.dataset.idx);
+      const field = this.dataset.field;
+      let val = this.value;
+      if (['ml','custo','pvs'].includes(field)) val = parseFloat(val) || 0;
+      estoque[idx][field] = val;
+      if (field === 'ml' || field === 'custo' || field === 'liquidez') {
+        estoque[idx].pvs = calcularPVS(estoque[idx]);
+        // update pvs input if exists
+        const pvsInp = document.querySelector(`.edit-input[data-field="pvs"][data-idx="${idx}"]`);
+        if (pvsInp) pvsInp.value = estoque[idx].pvs;
+      }
+      aplicarFiltros(); // re-render to refresh stats
+    });
+  });
+}
+
+function toggleSelectAll(cb) {
+  document.querySelectorAll('.row-check').forEach(c => c.checked = cb.checked);
+}
+
+function aplicarBulk() {
+  const field = document.getElementById('bulkField').value;
+  let val = document.getElementById('bulkValue').value;
+  if (val === '') { alert('Informe o valor.'); return; }
+  if (['ml','custo','pvs'].includes(field)) val = parseFloat(val) || 0;
+  let count = 0;
+  document.querySelectorAll('.row-check:checked').forEach(cb => {
+    const idx = parseInt(cb.dataset.idx);
+    if (estoque[idx]) {
+      estoque[idx][field] = val;
+      if (field === 'ml' || field === 'custo' || field === 'liquidez') {
+        estoque[idx].pvs = calcularPVS(estoque[idx]);
+      }
+      count++;
+    }
+  });
+  aplicarFiltros();
+  alert(`Aplicado em ${count} cartas.`);
+}
+
+function calcularCustoLote() {
+  const pago = parseFloat(document.getElementById('lotePago').value) || 0;
+  const pasta = (document.getElementById('lotePasta').value || '').trim().toLowerCase();
+  if (pago <= 0) { alert('Informe o valor pago.'); return; }
+  let cartas = estoque;
+  if (pasta) cartas = estoque.filter(c => (c.pasta || '').toLowerCase().includes(pasta));
+  const somaML = cartas.reduce((s, c) => s + (c.ml * c.qtd), 0);
+  if (somaML <= 0) { alert('Defina o ML das cartas do lote primeiro.'); return; }
+  const fator = pago / somaML;
+  cartas.forEach(c => {
+    c.custo = Math.round(c.ml * fator * 100) / 100;
+    c.pvs = calcularPVS(c);
+  });
+  aplicarFiltros();
+  document.getElementById('custoResultado').innerHTML = `<div class="alert">Soma ML: R$ ${somaML.toFixed(2)} | Fator: ${(fator*100).toFixed(1)}% | Atualizado em ${cartas.length} cartas.</div>`;
+}
+
+// Orçamento e Avaliador (versões simplificadas mantidas)
+function gerarOrcamento() {
+  const texto = document.getElementById('listaOrcamento').value.trim();
+  if (!texto || estoque.length === 0) { alert('Importe estoque e cole uma lista.'); return; }
+  const linhas = texto.split('\n').map(l => l.trim()).filter(Boolean);
+  const itens = [];
+  let total = 0;
+  linhas.forEach(linha => {
+    const m = linha.match(/^(\d+)\s+(.+)$/);
+    const qtdPedida = m ? parseInt(m[1]) : 1;
+    const nome = (m ? m[2] : linha).trim();
+    const matches = estoque.filter(c => c.nome.toLowerCase().includes(nome.toLowerCase()) && c.qtd > 0);
+    if (!matches.length) { itens.push({nome, qtd:qtdPedida, encontrado:false}); return; }
+    matches.sort((a,b) => b.pvs - a.pvs);
+    const card = matches[0];
+    const qtd = Math.min(qtdPedida, card.qtd);
+    const sub = qtd * card.pvs;
+    total += sub;
+    itens.push({qtd, nome:card.nome, set:card.set, lang:card.lang, cond:card.cond, extras:card.extras, preco:card.pvs, total:sub, encontrado:true});
+  });
+  orcamentoAtual = {cliente: document.getElementById('clienteNome').value||'Cliente', titulo: document.getElementById('loteTitulo').value||'Orçamento', itens, total, data: new Date().toLocaleDateString('pt-BR')};
+  let html = '<table><thead><tr><th>Qtd</th><th>Nome</th><th>Edição</th><th>Idioma</th><th>Qualidade</th><th>Extras</th><th>Unit.</th><th>Total</th></tr></thead><tbody>';
+  itens.forEach(it => {
+    if (!it.encontrado) html += `<tr><td>${it.qtd}</td><td colspan="7" style="color:#c41e3a">${it.nome} — não encontrado</td></tr>`;
+    else html += `<tr><td>${it.qtd}</td><td>${it.nome}</td><td>${it.set||'-'}</td><td>${it.lang}</td><td>${it.cond}</td><td>${it.extras||'-'}</td><td>R$ ${it.preco.toFixed(2)}</td><td>R$ ${it.total.toFixed(2)}</td></tr>`;
+  });
+  html += '</tbody></table>';
+  document.getElementById('orcamentoTabela').innerHTML = html;
+  document.getElementById('orcamentoTotal').textContent = `Total: R$ ${total.toFixed(2)}`;
+  document.getElementById('orcamentoResultado').style.display = 'block';
+  document.getElementById('btnPDF').style.display = 'inline-block';
+}
+
+function gerarPDF() {
+  if (!orcamentoAtual) return;
+  const doc = new jsPDF();
+  doc.setFontSize(16); doc.text('ORÇAMENTO', 14, 18);
+  doc.setFontSize(10);
+  doc.text(`Cliente: ${orcamentoAtual.cliente}`, 14, 26);
+  doc.text(`Lote: ${orcamentoAtual.titulo}`, 14, 32);
+  doc.text(`Data: ${orcamentoAtual.data} | Validade: 3 dias`, 14, 38);
+  const body = orcamentoAtual.itens.filter(i=>i.encontrado).map(it => [it.qtd, it.nome, it.set||'-', it.lang, it.cond, it.extras||'-', `R$ ${it.preco.toFixed(2)}`, `R$ ${it.total.toFixed(2)}`]);
+  doc.autoTable({ startY: 44, head: [['Qtd','Nome','Edição','Idioma','Qualidade','Extras','Unit.','Total']], body, theme: 'grid', headStyles: {fillColor:[26,58,107]} });
+  const y = doc.lastAutoTable.finalY || 50;
+  doc.setFontSize(12); doc.text(`Total: R$ ${orcamentoAtual.total.toFixed(2)}`, 14, y+10);
+  doc.save(`orcamento_${orcamentoAtual.titulo.replace(/\s+/g,'_')}.pdf`);
+}
+
+function avaliarLista() {
+  const nome = document.getElementById('avalNome').value || 'Lista';
+  const texto = document.getElementById('avalLista').value.trim();
+  if (!texto) { alert('Cole a lista.'); return; }
+  const linhas = texto.split('\n').map(l=>l.trim()).filter(Boolean);
+  const cartas = [];
+  linhas.forEach((linha, i) => {
+    let qtd=1, nomeC='', ml=0;
+    const parts = linha.split('|');
+    if (parts.length >= 2) {
+      ml = parseFloat(parts[1].replace(',','.')) || 0;
+      const left = parts[0].trim();
+      const m = left.match(/^(\d+)\s+(.+)$/);
+      if (m) { qtd=parseInt(m[1]); nomeC=m[2]; } else nomeC=left;
+    } else {
+      const m = linha.match(/^(\d+)\s+(.+?)\s+([\d.,]+)$/);
+      if (m) { qtd=parseInt(m[1]); nomeC=m[2]; ml=parseFloat(m[3].replace(',','.'))||0; }
+      else nomeC = linha;
+    }
+    const extras = /foil|showcase|borderless/i.test(linha) ? 'Foil' : '';
+    const liq = classificarLiquidez(nomeC, extras, ml);
+    cartas.push({num:i+1, nome:nomeC, qtd, ml, liquidez:liq, valor:ml*qtd});
+  });
+  const blocos = {A:0,B:0,C:0,D:0};
+  cartas.forEach(c => blocos[c.liquidez] += c.valor);
+  const total = Object.values(blocos).reduce((a,b)=>a+b,0);
+  const vcr = blocos.A*0.95 + blocos.B*0.75 + blocos.C*0.55 + blocos.D*0.25;
+  const pctA = total>0 ? blocos.A/total : 0;
+  const desc = 0.15 + (1-pctA)*0.1;
+  const pcr = vcr*(1-desc);
+  const oferta = pcr*0.85;
+  let html = `<p>Processadas ${cartas.length} entradas.</p><h3>Tabela</h3><table><thead><tr><th>#</th><th>Carta</th><th>Bloco</th><th>ML</th><th>Valor</th></tr></thead><tbody>`;
+  cartas.forEach(c => html += `<tr><td>${c.num}</td><td>${c.nome}</td><td><span class="badge ${c.liquidez}">${c.liquidez}</span></td><td>R$ ${c.ml.toFixed(2)}</td><td>R$ ${c.valor.toFixed(2)}</td></tr>`);
+  html += `</tbody></table><h3>Soma por bloco</h3><p>A: R$ ${blocos.A.toFixed(2)} | B: R$ ${blocos.B.toFixed(2)} | C: R$ ${blocos.C.toFixed(2)} | D: R$ ${blocos.D.toFixed(2)} | Total: R$ ${total.toFixed(2)}</p>`;
+  html += `<h3>VCR / PCR</h3><p>VCR: R$ ${vcr.toFixed(2)} | PCR (teto): R$ ${pcr.toFixed(2)} | Oferta inicial sugerida: ~R$ ${oferta.toFixed(2)}</p>`;
+  const rel = cartas.filter(c=>c.liquidez==='A'||c.ml>5).slice(0,8).map(c=>c.nome).join(', ');
+  html += `<h3>Texto de oferta</h3><div class="alert" style="white-space:pre-wrap;">Fiz a avaliação da lista do ${nome}. Pela soma do menor preço da Liga, a lista fica próxima de R$ ${total.toFixed(2)}. Ela tem algumas cartas interessantes para Commander, principalmente ${rel || 'peças úteis'}.\n\nAo mesmo tempo, parte do valor está em cartas mais específicas. Também considerei o trabalho de conferência, triagem e reaproveitamento. Considerando a compra fechada, consigo te oferecer R$ ${oferta.toFixed(2)} nela. É uma proposta acima do que normalmente lojas costumam pagar, mas ainda mantém margem viável. Se fizer sentido pra você, consigo fechar nesse valor.</div>`;
+  document.getElementById('avalTitulo').textContent = `Avaliação: ${nome}`;
+  document.getElementById('avalConteudo').innerHTML = html;
+  document.getElementById('avalResultado').style.display = 'block';
+}
+
+// --- Autocomplete ---
+function setupAutocomplete(inputId, listId, getOptions) {
+  const input = document.getElementById(inputId);
+  const list = document.getElementById(listId);
+  if (!input || !list) return;
+  input.addEventListener('input', function() {
+    const val = this.value.toLowerCase().trim();
+    list.innerHTML = '';
+    if (val.length < 1) { list.style.display = 'none'; return; }
+    const opts = getOptions(val).slice(0, 12);
+    if (!opts.length) { list.style.display = 'none'; return; }
+    opts.forEach(opt => {
+      const d = document.createElement('div');
+      d.textContent = opt;
+      d.onclick = () => { input.value = opt; list.style.display = 'none'; aplicarFiltros(); };
+      list.appendChild(d);
+    });
+    list.style.display = 'block';
+  });
+  input.addEventListener('blur', () => setTimeout(() => list.style.display = 'none', 150));
+}
+
+function initAutocomplete() {
+  setupAutocomplete('fNome', 'acNome', val => {
+    const set = new Set();
+    estoque.forEach(c => { if (c.nome.toLowerCase().includes(val)) set.add(c.nome); });
+    return [...set];
+  });
+  setupAutocomplete('fSet', 'acSet', val => {
+    const set = new Set();
+    estoque.forEach(c => { if ((c.set || '').toLowerCase().includes(val)) set.add(c.set); });
+    return [...set].filter(Boolean);
+  });
+}
+document.addEventListener('DOMContentLoaded', initAutocomplete);
+
+// --- Hover popup com Scryfall ---
+const cardPopup = document.createElement('div');
+cardPopup.className = 'card-popup';
+cardPopup.id = 'cardPopup';
+document.body.appendChild(cardPopup);
+
+let popupTimeout;
+document.addEventListener('mouseover', async function(e) {
+  const td = e.target.closest('td');
+  if (!td || td.cellIndex !== 2) return;
+  const tr = td.closest('tr');
+  if (!tr) return;
+  const nameCell = tr.cells[2];
+  if (!nameCell) return;
+  const nome = nameCell.textContent.trim();
+  if (!nome) return;
+
+  // Pega o índice real da linha para achar a carta correta (não a primeira com o mesmo nome)
+  const checkbox = tr.querySelector('.row-check');
+  const realIdx = checkbox ? parseInt(checkbox.dataset.idx) : -1;
+  const card = realIdx >= 0 ? estoque[realIdx] : estoque.find(c => c.nome === nome);
+  if (!card) return;
+
+  clearTimeout(popupTimeout);
+  popupTimeout = setTimeout(async () => {
+    cardPopup.innerHTML = `<strong>${card.nome}</strong><br>ML: R$ ${card.ml.toFixed(2)} | PVS: R$ ${card.pvs.toFixed(2)}<br>Qtd em estoque: ${card.qtd}<br><span class="muted">Carregando imagem...</span>`;
+    cardPopup.style.display = 'block';
+    cardPopup.style.visibility = 'hidden'; // esconde enquanto calcula posição
+
+    function posicionar() {
+      const rect = nameCell.getBoundingClientRect();
+      const pw = cardPopup.offsetWidth || 260;
+      const ph = cardPopup.offsetHeight || 400;
+      const margin = 8;
+      let left = rect.right + 12;
+      let top = rect.top;
+
+      // Direita
+      if (left + pw > window.innerWidth - margin) {
+        left = rect.left - pw - 12;
+      }
+      // Esquerda ainda fora
+      if (left < margin) left = margin;
+      // Ainda fora à direita
+      if (left + pw > window.innerWidth - margin) left = window.innerWidth - pw - margin;
+
+      // Vertical
+      if (top + ph > window.innerHeight - margin) {
+        top = rect.bottom - ph;
+      }
+      if (top < margin) top = margin;
+      if (top + ph > window.innerHeight - margin) top = window.innerHeight - ph - margin;
+
+      cardPopup.style.left = left + 'px';
+      cardPopup.style.top = top + 'px';
+      cardPopup.style.visibility = 'visible';
+    }
+
+    posicionar();
+
+    try {
+      let url;
+      if (card.scryfallId && card.scryfallId.length > 10) {
+        url = `https://api.scryfall.com/cards/${card.scryfallId}`;
+      } else {
+        url = `https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(nome)}`;
+        let setParam = card.setCode || '';
+        if (!setParam && card.set) {
+          const m = card.set.match(/\(([a-z0-9]{3,5})\)/i);
+          if (m) setParam = m[1].toLowerCase();
+        }
+        if (setParam && setParam.length >= 3) {
+          url += `&set=${encodeURIComponent(setParam)}`;
+        }
+      }
+      const resp = await fetch(url);
+      if (resp.ok) {
+        const data = await resp.json();
+        const img = data.image_uris?.normal || data.card_faces?.[0]?.image_uris?.normal;
+        if (img) {
+          const setInfo = data.set_name ? `<br><span class="muted">${data.set_name} (${data.set.toUpperCase()})</span>` : '';
+          cardPopup.innerHTML = `<img src="${img}" alt="${nome}" onload="this.closest('.card-popup') && window.__repositionPopup && window.__repositionPopup()"><strong>${card.nome}</strong>${setInfo}<br>ML: R$ ${card.ml.toFixed(2)} | PVS: R$ ${card.pvs.toFixed(2)}<br>Qtd em estoque: ${card.qtd}`;
+          window.__repositionPopup = posicionar;
+          setTimeout(posicionar, 50);
+        }
+      } else if (card.setCode) {
+        const fallback = await fetch(`https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(nome)}`);
+        if (fallback.ok) {
+          const data = await fallback.json();
+          const img = data.image_uris?.normal || data.card_faces?.[0]?.image_uris?.normal;
+          if (img) {
+            cardPopup.innerHTML = `<img src="${img}" alt="${nome}"><strong>${card.nome}</strong><br><span class="muted">Edição mais recente</span><br>ML: R$ ${card.ml.toFixed(2)} | PVS: R$ ${card.pvs.toFixed(2)}<br>Qtd: ${card.qtd}`;
+            setTimeout(posicionar, 50);
+          }
+        }
+      }
+    } catch (err) {
+      cardPopup.innerHTML = `<strong>${card.nome}</strong><br>ML: R$ ${card.ml.toFixed(2)} | PVS: R$ ${card.pvs.toFixed(2)}<br>Qtd: ${card.qtd}<br><span class="muted">Imagem indisponível</span>`;
+    }
+    setTimeout(posicionar, 100);
+  }, 300);
+});
+
+document.addEventListener('mouseout', function(e) {
+  if (!e.relatedTarget || !cardPopup.contains(e.relatedTarget)) {
+    clearTimeout(popupTimeout);
+    setTimeout(() => { if (!cardPopup.matches(':hover')) cardPopup.style.display = 'none'; }, 200);
+  }
+});
+</script>
+</body>
+</html>
