@@ -113,6 +113,8 @@
         <strong>Manabox:</strong> Collection → menu → Export → CSV.<br>
         <strong>Ligamagic:</strong> Exporte a coleção no formato “Padrão LigaMagic CSV [Modelo para Coleções]”.<br>
         <button class="secondary small" onclick="carregarExemplo()">Carregar dados de exemplo (para testar)</button>
+        <button class="secondary small" onclick="limparEstoque()">Limpar estoque</button>
+        <button class="primary small" onclick="atualizarML()">Atualizar ML (Ligamagic)</button>
       </div>
     </div>
 
@@ -443,7 +445,42 @@ document.getElementById('csvFile').addEventListener('change', function(e) {
   reader.readAsText(file, 'UTF-8');
 });
 
-function carregarExemplo() {
+function limparEstoque() {
+  if (!confirm('Tem certeza que quer limpar todo o estoque?')) return;
+  estoque = [];
+  filtered = [];
+  renderEstoque();
+  alert('Estoque limpo.');
+}
+
+async function atualizarML() {
+  if (estoque.length === 0) { alert('Importe ou carregue cartas primeiro.'); return; }
+  if (!confirm(`Atualizar ML de ${estoque.length} cartas na Ligamagic? Isso pode demorar.`)) return;
+  alert('Atualização iniciada. Aguarde...');
+  try {
+    const resp = await fetch('/api/atualizar-ml', { method: 'POST' });
+    const data = await resp.json();
+    if (data.ok) {
+      alert(`ML atualizado: ${data.atualizadas} de ${data.total} cartas.`);
+      // Recarrega do servidor se possível
+      const r = await fetch('/api/estoque');
+      const rows = await r.json();
+      if (Array.isArray(rows) && rows.length) {
+        estoque = rows.map(c => ({
+          nome: c.nome, qtd: c.qtd, set: c.set_name, setCode: c.set_code,
+          scryfallId: c.scryfall_id, cond: c.cond, lang: c.lang, extras: c.extras,
+          foil: !!c.foil, pasta: c.pasta, ml: c.ml, custo: c.custo, pvs: c.pvs, liquidez: c.liquidez
+        }));
+        filtered = [...estoque];
+        renderEstoque();
+      }
+    } else {
+      alert('Erro ao atualizar: ' + (data.error || 'desconhecido'));
+    }
+  } catch (e) {
+    alert('Não foi possível conectar ao servidor. A atualização de ML funciona apenas na versão hospedada.');
+  }
+}
   estoque = [
     {nome:'Sol Ring', qtd:2, set:'Commander Masters (CMM)', setCode:'cmm', cond:'NM', lang:'EN', extras:'', foil:false, pasta:'Geral', ml:8.5, custo:0, pvs:0, liquidez:'A'},
     {nome:'Arcane Signet', qtd:3, set:'Commander Masters (CMM)', setCode:'cmm', cond:'NM', lang:'EN', extras:'', foil:false, pasta:'Geral', ml:3.2, custo:0, pvs:0, liquidez:'A'},
