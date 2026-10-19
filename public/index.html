@@ -462,7 +462,6 @@ async function atualizarML() {
     const data = await resp.json();
     if (data.ok) {
       alert(`ML atualizado: ${data.atualizadas} de ${data.total} cartas.`);
-      // Recarrega do servidor se possível
       const r = await fetch('/api/estoque');
       const rows = await r.json();
       if (Array.isArray(rows) && rows.length) {
@@ -481,6 +480,8 @@ async function atualizarML() {
     alert('Não foi possível conectar ao servidor. A atualização de ML funciona apenas na versão hospedada.');
   }
 }
+
+function carregarExemplo() {
   estoque = [
     {nome:'Sol Ring', qtd:2, set:'Commander Masters (CMM)', setCode:'cmm', cond:'NM', lang:'EN', extras:'', foil:false, pasta:'Geral', ml:8.5, custo:0, pvs:0, liquidez:'A'},
     {nome:'Arcane Signet', qtd:3, set:'Commander Masters (CMM)', setCode:'cmm', cond:'NM', lang:'EN', extras:'', foil:false, pasta:'Geral', ml:3.2, custo:0, pvs:0, liquidez:'A'},
