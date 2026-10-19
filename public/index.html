@@ -455,13 +455,29 @@ function limparEstoque() {
 
 async function atualizarML() {
   if (estoque.length === 0) { alert('Importe ou carregue cartas primeiro.'); return; }
-  if (!confirm(`Atualizar ML de ${estoque.length} cartas na Ligamagic? Isso pode demorar.`)) return;
-  alert('Atualização iniciada. Aguarde...');
+  if (!confirm(`Atualizar ML de ${estoque.length} cartas na Ligamagic?`)) return;
+
+  const progressDiv = document.createElement('div');
+  progressDiv.id = 'mlProgress';
+  progressDiv.style.cssText = 'position:fixed;top:20px;right:20px;background:white;border:1px solid #ccc;padding:1rem;border-radius:8px;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,0.15);min-width:240px;';
+  progressDiv.innerHTML = '<strong>Atualizando ML...</strong><br><progress id="mlBar" value="0" max="100" style="width:100%;margin:0.5rem 0;"></progress><div id="mlStatus">Iniciando...</div>';
+  document.body.appendChild(progressDiv);
+
+  // Simula progresso enquanto o servidor processa
+  let prog = 0;
+  const timer = setInterval(() => {
+    prog = Math.min(prog + 2, 90);
+    document.getElementById('mlBar').value = prog;
+    document.getElementById('mlStatus').textContent = `Processando... ${prog}%`;
+  }, 400);
+
   try {
     const resp = await fetch('/api/atualizar-ml', { method: 'POST' });
     const data = await resp.json();
+    clearInterval(timer);
+    document.getElementById('mlBar').value = 100;
     if (data.ok) {
-      alert(`ML atualizado: ${data.atualizadas} de ${data.total} cartas.`);
+      document.getElementById('mlStatus').textContent = `Concluído: ${data.atualizadas} de ${data.total}`;
       const r = await fetch('/api/estoque');
       const rows = await r.json();
       if (Array.isArray(rows) && rows.length) {
@@ -474,11 +490,13 @@ async function atualizarML() {
         renderEstoque();
       }
     } else {
-      alert('Erro ao atualizar: ' + (data.error || 'desconhecido'));
+      document.getElementById('mlStatus').textContent = 'Erro na atualização';
     }
   } catch (e) {
-    alert('Não foi possível conectar ao servidor. A atualização de ML funciona apenas na versão hospedada.');
+    clearInterval(timer);
+    document.getElementById('mlStatus').textContent = 'Erro de conexão';
   }
+  setTimeout(() => progressDiv.remove(), 4000);
 }
 
 function carregarExemplo() {
