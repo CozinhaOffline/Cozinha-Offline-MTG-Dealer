@@ -431,6 +431,12 @@ document.getElementById('csvFile').addEventListener('change', function(e) {
         filtered = [...estoque];
         renderEstoque();
         initAutocomplete();
+        // Salva no servidor
+        fetch('/api/estoque/importar', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(estoque)
+        }).catch(() => {});
         alert(`${estoque.length} cartas importadas (${type === 'ligamagic' ? 'Ligamagic' : 'Manabox'}). Delimitador usado: "${delimiter}".`);
       },
       error: function(err) {
@@ -450,6 +456,11 @@ function limparEstoque() {
   estoque = [];
   filtered = [];
   renderEstoque();
+  fetch('/api/estoque/importar', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify([])
+  }).catch(() => {});
   alert('Estoque limpo.');
 }
 
@@ -515,6 +526,11 @@ function carregarExemplo() {
   filtered = [...estoque];
   renderEstoque();
   initAutocomplete();
+  fetch('/api/estoque/importar', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(estoque)
+  }).catch(() => {});
   alert('Dados de exemplo carregados. Use os filtros e o hover no nome das cartas.');
 }
 
