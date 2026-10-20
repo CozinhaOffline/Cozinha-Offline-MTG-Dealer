@@ -102,6 +102,7 @@
           <select id="csvType">
             <option value="manabox">Manabox CSV</option>
             <option value="ligamagic">Ligamagic CSV (Coleções)</option>
+            <option value="costorage">COStorage</option>
           </select>
         </div>
         <div class="col">
@@ -168,29 +169,34 @@
 
     <div class="card">
       <h2>Estoque atual</h2>
+      <div style="margin-bottom:0.8rem;">
+        <button class="secondary small" id="btnViewSimple" onclick="setViewMode('simple')">Visão Simples</button>
+        <button class="secondary small" id="btnViewDetail" onclick="setViewMode('detail')">Visão Detalhada</button>
+      </div>
       <div id="estoqueStats" class="stats"></div>
       <div id="tableContainer">
         <table id="estoqueTable">
           <thead>
-            <tr>
-              <th class="checkbox-col"><input type="checkbox" id="selectAll" onchange="toggleSelectAll(this)"></th>
-              <th>Qtd</th>
-              <th>Nome</th>
-              <th>Edição</th>
-              <th>Condição</th>
-              <th>Idioma</th>
-              <th>Extras</th>
-              <th>Pasta</th>
-              <th>ML (R$)</th>
-              <th>Custo (R$)</th>
-              <th>PVS (R$)</th>
-              <th>Liquidez</th>
-            </tr>
+            <tr id="tableHeader"></tr>
           </thead>
           <tbody></tbody>
         </table>
       </div>
       <p class="muted" id="estoqueEmpty">Nenhum estoque carregado ainda. Importe um CSV acima.</p>
+    </div>
+  </div>
+
+  <!-- Modal de pré-importação -->
+  <div id="importModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:2000;overflow:auto;">
+    <div style="background:white;margin:2rem auto;max-width:1400px;border-radius:12px;padding:1.5rem;">
+      <h2>Revisar importação</h2>
+      <p class="muted">Edite os campos em branco antes de adicionar ao estoque. Colunas bloqueadas não podem ser alteradas.</p>
+      <div class="filters" id="modalFilters"></div>
+      <div id="modalTableContainer" style="max-height:55vh;overflow:auto;border:1px solid var(--borda);border-radius:8px;"></div>
+      <div style="margin-top:1rem;display:flex;gap:0.8rem;justify-content:flex-end;">
+        <button class="secondary" onclick="cancelarImportacao()">Cancelar importação</button>
+        <button class="primary" onclick="adicionarAoEstoque()">Adicionar ao estoque</button>
+      </div>
     </div>
   </div>
 
@@ -348,8 +354,24 @@ document.getElementById('csvFile').addEventListener('change', function(e) {
           return;
         }
         estoque = results.data.map(row => {
-          let nome, qtd, set, setCode = '', cond, lang, extras, foil, pasta, ml = 0, scryfallId = '';
-          if (type === 'ligamagic') {
+          let nome, nomePt = '', qtd, set, setCode = '', cond, lang, extras, foil, pasta, ml = 0, scryfallId = '', cor = '', raridade = '', obs = '', desconto = 0;
+          if (type === 'costorage') {
+            nome = getField(row, ['CARD EN', 'Card EN', 'Nome EN']);
+            nomePt = getField(row, ['CARD PT', 'Card PT', 'Nome PT']);
+            qtd = parseInt(getField(row, ['Qde.', 'Qde', 'Quantidade', 'Qty'])) || 1;
+            set = getField(row, ['EDIÇÃO', 'Edicao', 'Edição']);
+            setCode = getField(row, ['EDIÇÃO (sigla)', 'Edicao (sigla)', 'Sigla']);
+            cond = getField(row, ['Estado', 'Condição', 'Condition']) || 'NM';
+            lang = getField(row, ['Idioma', 'Language']) || 'PT';
+            extras = getField(row, ['EXTRAS', 'Extras']);
+            foil = /foil/i.test(extras || '');
+            cor = getField(row, ['COR', 'Cor']);
+            raridade = getField(row, ['Raridade']);
+            obs = getField(row, ['OBS', 'Obs']);
+            const llp = getField(row, ['LLP', 'ML']);
+            ml = parseFloat((llp || '0').replace(',', '.')) || 0;
+            desconto = parseFloat(getField(row, ['Desconto']) || '0') || 0;
+          } else if (type === 'ligamagic') {
             nome = getField(row, ['Card (EN)', 'Card (PT)', 'Card', 'Nome', 'Name', 'Card Name', 'CardName']);
             qtd = parseInt(getField(row, ['Quantidade', 'Quantity', 'Qty', 'Qtd', 'Qtde'])) || 1;
             set = getField(row, ['Edicao (EN)', 'Edicao (PTBR)', 'Edicao', 'Set Name', 'Set', 'Edição']);
@@ -404,6 +426,7 @@ document.getElementById('csvFile').addEventListener('change', function(e) {
           if (!nome) return null;
           const card = {
             nome: nome.trim(),
+            nomePt: typeof nomePt !== 'undefined' ? nomePt : '',
             qtd,
             set: set || '',
             setCode: (setCode || '').toLowerCase().trim(),
@@ -413,6 +436,10 @@ document.getElementById('csvFile').addEventListener('change', function(e) {
             extras: extras || '',
             foil,
             pasta: pasta || 'Geral',
+            cor: typeof cor !== 'undefined' ? cor : '',
+            raridade: typeof raridade !== 'undefined' ? raridade : '',
+            obs: typeof obs !== 'undefined' ? obs : '',
+            desconto: typeof desconto !== 'undefined' ? desconto : 0,
             ml,
             custo: 0,
             pvs: 0,
@@ -425,19 +452,12 @@ document.getElementById('csvFile').addEventListener('change', function(e) {
 
         if (estoque.length === 0) {
           alert('Nenhuma carta reconhecida. Verifique se o tipo de arquivo está correto e se o CSV tem cabeçalhos.');
-          console.log('Headers encontrados:', results.meta && results.meta.fields);
           return;
         }
-        filtered = [...estoque];
-        renderEstoque();
-        initAutocomplete();
-        // Salva no servidor
-        fetch('/api/estoque/importar', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(estoque)
-        }).catch(() => {});
-        alert(`${estoque.length} cartas importadas (${type === 'ligamagic' ? 'Ligamagic' : 'Manabox'}). Delimitador usado: "${delimiter}".`);
+
+        pendingImport = estoque.slice();
+        estoque = [];
+        abrirModalImportacao();
       },
       error: function(err) {
         alert('Erro ao ler o CSV: ' + (err.message || err));
@@ -450,6 +470,56 @@ document.getElementById('csvFile').addEventListener('change', function(e) {
   };
   reader.readAsText(file, 'UTF-8');
 });
+
+function abrirModalImportacao() {
+  const modal = document.getElementById('importModal');
+  const cont = document.getElementById('modalTableContainer');
+  const cols = [['qtd','Qde.'],['nomePt','NOME PT'],['nome','NOME EN'],['set','EDIÇÃO'],['setCode','EDIÇÃO (sigla)'],['cor','COR'],['raridade','Raridade'],['cond','Estado'],['lang','Idioma'],['extras','EXTRAS'],['obs','OBS'],['ml','LLP'],['desconto','Desconto'],['custo','Custo'],['pvs','PVS']];
+  let html = '<table style="width:100%;font-size:0.82rem;"><thead><tr><th></th>' + cols.map(c=>`<th>${c[1]}</th>`).join('') + '</tr></thead><tbody>';
+  pendingImport.forEach((c, i) => {
+    html += `<tr><td><button class="secondary small" style="background:#c41e3a;" onclick="removerPendente(${i})">×</button></td>`;
+    cols.forEach(([k]) => {
+      const locked = LOCKED.includes(k);
+      const v = c[k] ?? '';
+      html += locked
+        ? `<td>${v}</td>`
+        : `<td><input class="edit-input" data-i="${i}" data-k="${k}" value="${v}" style="width:80px;"></td>`;
+    });
+    html += '</tr>';
+  });
+  html += '</tbody></table>';
+  cont.innerHTML = html;
+  cont.querySelectorAll('.edit-input').forEach(inp => {
+    inp.onchange = () => {
+      const i = +inp.dataset.i;
+      const k = inp.dataset.k;
+      let v = inp.value;
+      if (['qtd','ml','custo','pvs','desconto'].includes(k)) v = parseFloat(v) || 0;
+      pendingImport[i][k] = v;
+    };
+  });
+  modal.style.display = 'block';
+}
+
+function removerPendente(i) {
+  pendingImport.splice(i, 1);
+  abrirModalImportacao();
+}
+
+function cancelarImportacao() {
+  document.getElementById('importModal').style.display = 'none';
+  pendingImport = [];
+}
+
+function adicionarAoEstoque() {
+  if (!pendingImport.length) { alert('Nada para importar.'); return; }
+  estoque = estoque.concat(pendingImport);
+  filtered = [...estoque];
+  document.getElementById('importModal').style.display = 'none';
+  pendingImport = [];
+  renderEstoque();
+  alert(`Adicionadas ${estoque.length} cartas ao estoque.`);
+}
 
 function limparEstoque() {
   if (!confirm('Tem certeza que quer limpar todo o estoque?')) return;
@@ -596,68 +666,75 @@ function limparFiltros() {
   renderEstoque();
 }
 
+let viewMode = 'detail';
+let pendingImport = [];
+
+function setViewMode(mode) {
+  viewMode = mode;
+  document.getElementById('btnViewSimple').style.fontWeight = mode === 'simple' ? '700' : '400';
+  document.getElementById('btnViewDetail').style.fontWeight = mode === 'detail' ? '700' : '400';
+  renderEstoque();
+}
+
+const LOCKED = ['nomePt','nome','set','setCode','cor','ml'];
+const SIMPLE_COLS = ['qtd','nome','set','lang','cond','ml','pvs'];
+
 function renderEstoque() {
+  const thead = document.getElementById('tableHeader');
   const tbody = document.querySelector('#estoqueTable tbody');
   tbody.innerHTML = '';
-  const data = filtered.length ? filtered : estoque;
-  if (data.length === 0 && estoque.length === 0) {
+  if (!filtered.length) {
     document.getElementById('estoqueEmpty').style.display = 'block';
-    document.getElementById('estoqueStats').innerHTML = '';
+    thead.innerHTML = '';
     return;
   }
   document.getElementById('estoqueEmpty').style.display = 'none';
-  let totalQtd = 0, totalML = 0, totalPVS = 0;
-  data.forEach((c, idx) => {
-    const realIdx = estoque.indexOf(c);
-    totalQtd += c.qtd;
-    totalML += c.ml * c.qtd;
-    totalPVS += c.pvs * c.qtd;
+
+  const cols = viewMode === 'simple'
+    ? [['qtd','Qde.'],['nome','NOME EN'],['set','EDIÇÃO'],['lang','Idioma'],['cond','Estado'],['ml','LLP'],['pvs','PVS']]
+    : [['qtd','Qde.'],['nomePt','NOME PT'],['nome','NOME EN'],['set','EDIÇÃO'],['setCode','EDIÇÃO (sigla)'],['cor','COR'],['raridade','Raridade'],['cond','Estado'],['lang','Idioma'],['extras','EXTRAS'],['obs','OBS'],['ml','LLP'],['desconto','Desconto'],['custo','Custo'],['pvs','PVS'],['liquidez','Liquidez']];
+
+  thead.innerHTML = (viewMode === 'detail' ? '<th class="checkbox-col"><input type="checkbox" id="selectAll" onchange="toggleSelectAll(this)"></th>' : '') +
+    cols.map(c => `<th>${c[1]}</th>`).join('') +
+    (viewMode === 'detail' ? '<th></th>' : '');
+
+  filtered.forEach((c, i) => {
     const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td class="checkbox-col"><input type="checkbox" class="row-check" data-idx="${realIdx}"></td>
-      <td>${c.qtd}</td>
-      <td>${c.nome}</td>
-      <td><input class="edit-input" data-field="set" data-idx="${realIdx}" value="${c.set || ''}"></td>
-      <td><input class="edit-input" data-field="cond" data-idx="${realIdx}" value="${c.cond || ''}"></td>
-      <td><input class="edit-input" data-field="lang" data-idx="${realIdx}" value="${c.lang || ''}"></td>
-      <td><input class="edit-input" data-field="extras" data-idx="${realIdx}" value="${c.extras || ''}"></td>
-      <td><input class="edit-input" data-field="pasta" data-idx="${realIdx}" value="${c.pasta || ''}"></td>
-      <td><input class="edit-input" data-field="ml" data-idx="${realIdx}" type="number" step="0.01" value="${c.ml}"></td>
-      <td><input class="edit-input" data-field="custo" data-idx="${realIdx}" type="number" step="0.01" value="${c.custo}"></td>
-      <td><input class="edit-input" data-field="pvs" data-idx="${realIdx}" type="number" step="0.01" value="${c.pvs}"></td>
-      <td><select class="edit-input" data-field="liquidez" data-idx="${realIdx}">
-        <option value="A" ${c.liquidez==='A'?'selected':''}>A</option>
-        <option value="B" ${c.liquidez==='B'?'selected':''}>B</option>
-        <option value="C" ${c.liquidez==='C'?'selected':''}>C</option>
-        <option value="D" ${c.liquidez==='D'?'selected':''}>D</option>
-      </select></td>
-    `;
+    let html = viewMode === 'detail' ? `<td class="checkbox-col"><input type="checkbox" class="row-check" data-i="${i}"></td>` : '';
+    cols.forEach(([key, label]) => {
+      const val = c[key] ?? '';
+      const locked = LOCKED.includes(key) || viewMode === 'simple';
+      if (locked) {
+        html += `<td>${val}</td>`;
+      } else {
+        html += `<td><input class="edit-input" data-i="${i}" data-k="${key}" value="${val}"></td>`;
+      }
+    });
+    if (viewMode === 'detail') html += `<td><button class="secondary small" style="background:#c41e3a;" onclick="removerLinha(${i})">×</button></td>`;
+    tr.innerHTML = html;
     tbody.appendChild(tr);
   });
-  document.getElementById('estoqueStats').innerHTML = `
-    <div class="stat"><strong>${data.length}</strong><span class="muted">Exibindo</span></div>
-    <div class="stat"><strong>${estoque.length}</strong><span class="muted">Total no estoque</span></div>
-    <div class="stat"><strong>${totalQtd}</strong><span class="muted">Qtd (filtro)</span></div>
-    <div class="stat"><strong>R$ ${totalML.toFixed(2)}</strong><span class="muted">Soma ML</span></div>
-    <div class="stat"><strong>R$ ${totalPVS.toFixed(2)}</strong><span class="muted">Soma PVS</span></div>
-  `;
-  // Bind edits
-  document.querySelectorAll('.edit-input').forEach(inp => {
-    inp.addEventListener('change', function() {
-      const idx = parseInt(this.dataset.idx);
-      const field = this.dataset.field;
-      let val = this.value;
-      if (['ml','custo','pvs'].includes(field)) val = parseFloat(val) || 0;
-      estoque[idx][field] = val;
-      if (field === 'ml' || field === 'custo' || field === 'liquidez') {
-        estoque[idx].pvs = calcularPVS(estoque[idx]);
-        // update pvs input if exists
-        const pvsInp = document.querySelector(`.edit-input[data-field="pvs"][data-idx="${idx}"]`);
-        if (pvsInp) pvsInp.value = estoque[idx].pvs;
-      }
-      aplicarFiltros(); // re-render to refresh stats
-    });
+
+  // bind edits
+  tbody.querySelectorAll('.edit-input').forEach(inp => {
+    inp.onchange = () => {
+      const i = +inp.dataset.i;
+      const k = inp.dataset.k;
+      let v = inp.value;
+      if (['qtd','ml','custo','pvs','desconto'].includes(k)) v = parseFloat(v) || 0;
+      filtered[i][k] = v;
+      const orig = estoque.findIndex(x => x === filtered[i]);
+      if (orig >= 0) estoque[orig][k] = v;
+    };
   });
+}
+
+function removerLinha(i) {
+  const item = filtered[i];
+  filtered.splice(i, 1);
+  const oi = estoque.indexOf(item);
+  if (oi >= 0) estoque.splice(oi, 1);
+  renderEstoque();
 }
 
 function toggleSelectAll(cb) {
