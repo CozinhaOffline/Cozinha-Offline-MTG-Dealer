@@ -471,34 +471,129 @@ document.getElementById('csvFile').addEventListener('change', function(e) {
   reader.readAsText(file, 'UTF-8');
 });
 
+function formatMoney(v) {
+  const n = parseFloat(v) || 0;
+  return 'R$ ' + n.toFixed(2).replace('.', ',');
+}
+
+function parseMoney(s) {
+  return parseFloat(String(s).replace(/[R$\s]/g, '').replace(',', '.')) || 0;
+}
+
+function formatPct(v) {
+  const n = parseFloat(v) || 0;
+  return n + '%';
+}
+
+function parsePct(s) {
+  return parseFloat(String(s).replace('%', '')) || 0;
+}
+
+function calcCusto(llp, desconto) {
+  const d = parseFloat(desconto) || 0;
+  return Math.round(llp * (1 + d / 100) * 100) / 100;
+}
+
+function calcPVS(card) {
+  const llp = parseFloat(card.ml) || 0;
+  const custo = parseFloat(card.custo) || 0;
+  const custo20 = custo * 1.2;
+  let pvs = Math.max(llp, custo20);
+  if (card.liquidez === 'A' && llp > 0) {
+    let mult = 1;
+    if (llp <= 1) mult = 3;
+    else if (llp <= 2) mult = 2.5;
+    else if (llp <= 5) mult = 2;
+    else if (llp <= 10) mult = 1.5;
+    else if (llp <= 50) mult = 1.25;
+    const pvsA = llp * mult;
+    pvs = Math.max(pvs, pvsA);
+  }
+  return Math.round(pvs * 100) / 100;
+}
+
+function aplicarCalculos(card) {
+  card.desconto = parsePct(card.desconto);
+  card.custo = calcCusto(card.ml, card.desconto);
+  card.pvs = calcPVS(card);
+  if (!card.data) card.data = new Date().toISOString().slice(0, 16).replace('T', ' ');
+}
+
 function abrirModalImportacao() {
+  pendingImport.forEach(aplicarCalculos);
   const modal = document.getElementById('importModal');
   const cont = document.getElementById('modalTableContainer');
-  const cols = [['qtd','Qde.'],['nomePt','NOME PT'],['nome','NOME EN'],['set','EDIÇÃO'],['setCode','EDIÇÃO (sigla)'],['cor','COR'],['raridade','Raridade'],['cond','Estado'],['lang','Idioma'],['extras','EXTRAS'],['obs','OBS'],['ml','LLP'],['desconto','Desconto'],['custo','Custo'],['pvs','PVS']];
-  let html = '<table style="width:100%;font-size:0.82rem;"><thead><tr><th></th>' + cols.map(c=>`<th>${c[1]}</th>`).join('') + '</tr></thead><tbody>';
-  pendingImport.forEach((c, i) => {
-    html += `<tr><td><button class="secondary small" style="background:#c41e3a;" onclick="removerPendente(${i})">×</button></td>`;
-    cols.forEach(([k]) => {
-      const locked = LOCKED.includes(k);
-      const v = c[k] ?? '';
-      html += locked
-        ? `<td>${v}</td>`
-        : `<td><input class="edit-input" data-i="${i}" data-k="${k}" value="${v}" style="width:80px;"></td>`;
-    });
-    html += '</tr>';
+  const cols = [
+    ['codigo','Código'],['qtd','Qde.'],['nomePt','NOME PT'],['nome','NOME EN'],
+    ['set','EDIÇÃO'],['setCode','EDIÇÃO (sigla)'],['cor','COR'],['raridade','Raridade'],
+    ['cond','Estado'],['lang','Idioma'],['extras','EXTRAS'],['obs','OBS'],
+    ['operacao','Operação'],['data','Data'],['depara','De/Para'],
+    ['ml','LLP'],['desconto','Desconto'],['custo','Custo'],['pvs','PVS'],['liquidez','Liquidez']
+  ];
+  let html = '<div class="filters" style="margin-bottom:0.8rem;">';
+  cols.forEach(([k, label]) => {
+    html += `<div><label>${label}</label><input type="text" class="modal-filter" data-k="${k}" placeholder="Filtrar..."></div>`;
   });
+  html += '</div>';
+  html += '<table style="width:100%;font-size:0.8rem;"><thead><tr><th></th>' + cols.map(c=>`<th>${c[1]}</th>`).join('') + '</tr></thead><tbody id="modalBody">';
   html += '</tbody></table>';
   cont.innerHTML = html;
-  cont.querySelectorAll('.edit-input').forEach(inp => {
+  renderModalRows();
+  cont.querySelectorAll('.modal-filter').forEach(inp => {
+    inp.oninput = () => renderModalRows();
+  });
+  modal.style.display = 'block';
+}
+
+function renderModalRows() {
+  const filters = {};
+  document.querySelectorAll('.modal-filter').forEach(inp => {
+    if (inp.value) filters[inp.dataset.k] = inp.value.toLowerCase();
+  });
+  const tbody = document.getElementById('modalBody');
+  tbody.innerHTML = '';
+  const cols = [
+    ['codigo','Código'],['qtd','Qde.'],['nomePt','NOME PT'],['nome','NOME EN'],
+    ['set','EDIÇÃO'],['setCode','EDIÇÃO (sigla)'],['cor','COR'],['raridade','Raridade'],
+    ['cond','Estado'],['lang','Idioma'],['extras','EXTRAS'],['obs','OBS'],
+    ['operacao','Operação'],['data','Data'],['depara','De/Para'],
+    ['ml','LLP'],['desconto','Desconto'],['custo','Custo'],['pvs','PVS'],['liquidez','Liquidez']
+  ];
+  pendingImport.forEach((c, i) => {
+    let show = true;
+    for (const [k, v] of Object.entries(filters)) {
+      if (String(c[k] || '').toLowerCase().indexOf(v) === -1) { show = false; break; }
+    }
+    if (!show) return;
+    const tr = document.createElement('tr');
+    let html = `<td><button class="secondary small" style="background:#c41e3a;" onclick="removerPendente(${i})">×</button></td>`;
+    cols.forEach(([k]) => {
+      const locked = LOCKED.includes(k);
+      let v = c[k] ?? '';
+      if (k === 'ml' || k === 'custo' || k === 'pvs') v = formatMoney(v);
+      else if (k === 'desconto') v = formatPct(v);
+      html += locked
+        ? `<td>${v}</td>`
+        : `<td><input class="edit-input" data-i="${i}" data-k="${k}" value="${v}" style="width:70px;"></td>`;
+    });
+    tr.innerHTML = html;
+    tbody.appendChild(tr);
+  });
+  tbody.querySelectorAll('.edit-input').forEach(inp => {
     inp.onchange = () => {
       const i = +inp.dataset.i;
       const k = inp.dataset.k;
       let v = inp.value;
-      if (['qtd','ml','custo','pvs','desconto'].includes(k)) v = parseFloat(v) || 0;
+      if (k === 'ml' || k === 'custo' || k === 'pvs') v = parseMoney(v);
+      else if (k === 'desconto') v = parsePct(v);
+      else if (k === 'qtd') v = parseInt(v) || 1;
       pendingImport[i][k] = v;
+      if (k === 'desconto' || k === 'ml' || k === 'liquidez') {
+        aplicarCalculos(pendingImport[i]);
+        renderModalRows();
+      }
     };
   });
-  modal.style.display = 'block';
 }
 
 function removerPendente(i) {
@@ -692,20 +787,23 @@ function renderEstoque() {
 
   const cols = viewMode === 'simple'
     ? [['qtd','Qde.'],['nome','NOME EN'],['set','EDIÇÃO'],['lang','Idioma'],['cond','Estado'],['ml','LLP'],['pvs','PVS']]
-    : [['qtd','Qde.'],['nomePt','NOME PT'],['nome','NOME EN'],['set','EDIÇÃO'],['setCode','EDIÇÃO (sigla)'],['cor','COR'],['raridade','Raridade'],['cond','Estado'],['lang','Idioma'],['extras','EXTRAS'],['obs','OBS'],['ml','LLP'],['desconto','Desconto'],['custo','Custo'],['pvs','PVS'],['liquidez','Liquidez']];
+    : [['codigo','Código'],['qtd','Qde.'],['nomePt','NOME PT'],['nome','NOME EN'],['set','EDIÇÃO'],['setCode','EDIÇÃO (sigla)'],['cor','COR'],['raridade','Raridade'],['cond','Estado'],['lang','Idioma'],['extras','EXTRAS'],['obs','OBS'],['operacao','Operação'],['data','Data'],['depara','De/Para'],['ml','LLP'],['desconto','Desconto'],['custo','Custo'],['pvs','PVS'],['liquidez','Liquidez']];
 
   thead.innerHTML = (viewMode === 'detail' ? '<th class="checkbox-col"><input type="checkbox" id="selectAll" onchange="toggleSelectAll(this)"></th>' : '') +
     cols.map(c => `<th>${c[1]}</th>`).join('') +
     (viewMode === 'detail' ? '<th></th>' : '');
 
   filtered.forEach((c, i) => {
+    aplicarCalculos(c);
     const tr = document.createElement('tr');
     let html = viewMode === 'detail' ? `<td class="checkbox-col"><input type="checkbox" class="row-check" data-i="${i}"></td>` : '';
-    cols.forEach(([key, label]) => {
-      const val = c[key] ?? '';
+    cols.forEach(([key]) => {
+      let val = c[key] ?? '';
+      if (key === 'ml' || key === 'custo' || key === 'pvs') val = formatMoney(val);
+      else if (key === 'desconto') val = formatPct(val);
       const locked = LOCKED.includes(key) || viewMode === 'simple';
       if (locked) {
-        html += `<td>${val}</td>`;
+        html += `<td class="card-name" data-nome="${c.nome}" data-set="${c.setCode || ''}">${val}</td>`;
       } else {
         html += `<td><input class="edit-input" data-i="${i}" data-k="${key}" value="${val}"></td>`;
       }
@@ -715,16 +813,21 @@ function renderEstoque() {
     tbody.appendChild(tr);
   });
 
-  // bind edits
   tbody.querySelectorAll('.edit-input').forEach(inp => {
     inp.onchange = () => {
       const i = +inp.dataset.i;
       const k = inp.dataset.k;
       let v = inp.value;
-      if (['qtd','ml','custo','pvs','desconto'].includes(k)) v = parseFloat(v) || 0;
+      if (k === 'ml' || k === 'custo' || k === 'pvs') v = parseMoney(v);
+      else if (k === 'desconto') v = parsePct(v);
+      else if (k === 'qtd') v = parseInt(v) || 1;
       filtered[i][k] = v;
       const orig = estoque.findIndex(x => x === filtered[i]);
       if (orig >= 0) estoque[orig][k] = v;
+      if (k === 'desconto' || k === 'ml' || k === 'liquidez') {
+        aplicarCalculos(filtered[i]);
+        renderEstoque();
+      }
     };
   });
 }
@@ -912,19 +1015,12 @@ document.body.appendChild(cardPopup);
 
 let popupTimeout;
 document.addEventListener('mouseover', async function(e) {
-  const td = e.target.closest('td');
-  if (!td || td.cellIndex !== 2) return;
-  const tr = td.closest('tr');
-  if (!tr) return;
-  const nameCell = tr.cells[2];
-  if (!nameCell) return;
-  const nome = nameCell.textContent.trim();
+  const td = e.target.closest('.card-name');
+  if (!td) return;
+  const nome = td.dataset.nome || td.textContent.trim();
   if (!nome) return;
-
-  // Pega o índice real da linha para achar a carta correta (não a primeira com o mesmo nome)
-  const checkbox = tr.querySelector('.row-check');
-  const realIdx = checkbox ? parseInt(checkbox.dataset.idx) : -1;
-  const card = realIdx >= 0 ? estoque[realIdx] : estoque.find(c => c.nome === nome);
+  const setCode = td.dataset.set || '';
+  const card = estoque.find(c => c.nome === nome && (!setCode || c.setCode === setCode)) || estoque.find(c => c.nome === nome);
   if (!card) return;
 
   clearTimeout(popupTimeout);
@@ -934,7 +1030,7 @@ document.addEventListener('mouseover', async function(e) {
     cardPopup.style.visibility = 'hidden'; // esconde enquanto calcula posição
 
     function posicionar() {
-      const rect = nameCell.getBoundingClientRect();
+      const rect = td.getBoundingClientRect();
       const pw = cardPopup.offsetWidth || 260;
       const ph = cardPopup.offsetHeight || 400;
       const margin = 8;
