@@ -63,19 +63,13 @@
   .col { flex: 1; min-width: 220px; }
   .checkbox-col { width: 36px; text-align: center; }
   #tableContainer { max-height: 70vh; overflow: auto; border: 1px solid var(--borda); border-radius: 8px; }
-  .autocomplete { position: relative; }
-  .autocomplete-list {
-    position: absolute; top: 100%; left: 0; right: 0; background: white; border: 1px solid var(--borda);
-    border-radius: 0 0 6px 6px; max-height: 220px; overflow-y: auto; z-index: 100; box-shadow: 0 4px 12px rgba(0,0,0,0.1); display: none;
-  }
-  .autocomplete-list div { padding: 0.45rem 0.7rem; cursor: pointer; font-size: 0.9rem; }
-  .autocomplete-list div:hover, .autocomplete-list div.active { background: #eff6ff; }
+  #estoqueTable { min-width: 2000px; }
   .card-popup {
     position: fixed; background: white; border: 1px solid var(--borda); border-radius: 10px; padding: 0.8rem;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.18); z-index: 2000; width: 240px; max-height: 80vh; overflow-y: auto;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.18); z-index: 2000; width: 340px; max-height: 80vh; overflow-y: auto;
     display: none; pointer-events: none; box-sizing: border-box;
   }
-  .card-popup img { width: 100%; max-height: 280px; object-fit: contain; border-radius: 6px; margin-bottom: 0.5rem; }
+  .card-popup img { width: 100%; max-height: 380px; object-fit: contain; border-radius: 6px; margin-bottom: 0.5rem; }
   .card-popup strong { color: var(--azul); }
 
 </style>
@@ -188,11 +182,31 @@
 
   <!-- Modal de pré-importação -->
   <div id="importModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:2000;overflow:auto;">
-    <div style="background:white;margin:2rem auto;max-width:1400px;border-radius:12px;padding:1.5rem;">
+    <div id="modalBox" style="background:white;margin:1rem auto;max-width:95vw;width:1400px;border-radius:12px;padding:1.5rem;resize:both;overflow:auto;min-width:800px;min-height:400px;">
       <h2>Revisar importação</h2>
-      <p class="muted">Edite os campos em branco antes de adicionar ao estoque. Colunas bloqueadas não podem ser alteradas.</p>
-      <div class="filters" id="modalFilters"></div>
-      <div id="modalTableContainer" style="max-height:55vh;overflow:auto;border:1px solid var(--borda);border-radius:8px;"></div>
+      <p class="muted">Arraste a borda inferior direita para redimensionar. Edite campos ou use a edição em massa abaixo.</p>
+      <div class="filters" style="margin-bottom:0.8rem;">
+        <div><label>Campo</label>
+          <select id="bulkFieldModal">
+            <option value="desconto">Desconto</option>
+            <option value="codigo">Código</option>
+            <option value="operacao">Operação</option>
+            <option value="depara">De/Para</option>
+            <option value="obs">OBS</option>
+            <option value="liquidez">Liquidez</option>
+          </select>
+        </div>
+        <div><label>Valor</label><input type="text" id="bulkValueModal" placeholder="-20 ou 30"></div>
+        <div><label>Aplicar em</label>
+          <select id="bulkTargetModal">
+            <option value="todos">Todos (filtrados)</option>
+            <option value="vazias">Linhas vazias</option>
+            <option value="selecionadas">Linhas selecionadas</option>
+          </select>
+        </div>
+        <div style="align-self:end;"><button class="primary small" onclick="aplicarBulkModal()">Aplicar</button></div>
+      </div>
+      <div id="modalTableContainer" style="max-height:50vh;overflow:auto;border:1px solid var(--borda);border-radius:8px;"></div>
       <div style="margin-top:1rem;display:flex;gap:0.8rem;justify-content:flex-end;">
         <button class="secondary" onclick="cancelarImportacao()">Cancelar importação</button>
         <button class="primary" onclick="adicionarAoEstoque()">Adicionar ao estoque</button>
@@ -596,7 +610,26 @@ function renderModalRows() {
   });
 }
 
-function removerPendente(i) {
+function aplicarBulkModal() {
+  const field = document.getElementById('bulkFieldModal').value;
+  let val = document.getElementById('bulkValueModal').value;
+  const target = document.getElementById('bulkTargetModal').value;
+  if (val === '') { alert('Informe o valor.'); return; }
+  if (field === 'desconto') val = parsePct(val);
+  else if (field === 'qtd') val = parseInt(val) || 1;
+  let count = 0;
+  pendingImport.forEach((c, i) => {
+    const isEmpty = !c[field] && c[field] !== 0;
+    const selected = document.querySelector(`#modalBody tr[data-i="${i}"] input.row-check`)?.checked;
+    if (target === 'todos' || (target === 'vazias' && isEmpty) || (target === 'selecionadas' && selected)) {
+      c[field] = val;
+      if (field === 'desconto' || field === 'liquidez') aplicarCalculos(c);
+      count++;
+    }
+  });
+  renderModalRows();
+  alert(`Aplicado em ${count} linhas.`);
+}
   pendingImport.splice(i, 1);
   abrirModalImportacao();
 }
@@ -718,13 +751,18 @@ function calcularPVS(card) {
 }
 
 function aplicarFiltros() {
-  const nome = document.getElementById('fNome').value.toLowerCase();
-  const set = document.getElementById('fSet').value.toLowerCase();
-  const pasta = document.getElementById('fPasta').value.toLowerCase();
-  const cond = document.getElementById('fCond').value.toLowerCase();
-  const extras = document.getElementById('fExtras').value.toLowerCase();
-  const qtdMin = parseInt(document.getElementById('fQtdMin').value) || 0;
-  const sort = document.getElementById('fSort').value;
+  const nome = document.getElementById('fNome')?.value.toLowerCase() || '';
+  const set = document.getElementById('fSet')?.value.toLowerCase() || '';
+  const pasta = document.getElementById('fPasta')?.value.toLowerCase() || '';
+  const cond = document.getElementById('fCond')?.value.toLowerCase() || '';
+  const extras = document.getElementById('fExtras')?.value.toLowerCase() || '';
+  const qtdMin = parseInt(document.getElementById('fQtdMin')?.value) || 0;
+  const sort = document.getElementById('fSort')?.value || 'nome-az';
+
+  const colFilters = {};
+  document.querySelectorAll('.col-filter').forEach(inp => {
+    if (inp.value) colFilters[inp.dataset.k] = inp.value.toLowerCase();
+  });
 
   filtered = estoque.filter(c => {
     if (nome && !c.nome.toLowerCase().includes(nome)) return false;
@@ -733,6 +771,9 @@ function aplicarFiltros() {
     if (cond && !(c.cond || '').toLowerCase().includes(cond)) return false;
     if (extras && !(c.extras || '').toLowerCase().includes(extras)) return false;
     if (c.qtd < qtdMin) return false;
+    for (const [k, v] of Object.entries(colFilters)) {
+      if (String(c[k] || '').toLowerCase().indexOf(v) === -1) return false;
+    }
     return true;
   });
 
@@ -790,8 +831,12 @@ function renderEstoque() {
     : [['codigo','Código'],['qtd','Qde.'],['nomePt','NOME PT'],['nome','NOME EN'],['set','EDIÇÃO'],['setCode','EDIÇÃO (sigla)'],['cor','COR'],['raridade','Raridade'],['cond','Estado'],['lang','Idioma'],['extras','EXTRAS'],['obs','OBS'],['operacao','Operação'],['data','Data'],['depara','De/Para'],['ml','LLP'],['desconto','Desconto'],['custo','Custo'],['pvs','PVS'],['liquidez','Liquidez']];
 
   thead.innerHTML = (viewMode === 'detail' ? '<th class="checkbox-col"><input type="checkbox" id="selectAll" onchange="toggleSelectAll(this)"></th>' : '') +
-    cols.map(c => `<th>${c[1]}</th>`).join('') +
+    cols.map(c => `<th>${c[1]}<br><input type="text" class="col-filter" data-k="${c[0]}" placeholder="Filtrar" style="width:90%;font-size:0.75rem;margin-top:2px;"></th>`).join('') +
     (viewMode === 'detail' ? '<th></th>' : '');
+
+  document.querySelectorAll('.col-filter').forEach(inp => {
+    inp.oninput = aplicarFiltros;
+  });
 
   filtered.forEach((c, i) => {
     aplicarCalculos(c);
