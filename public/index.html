@@ -336,7 +336,80 @@
 
 <script>
 const { jsPDF } = window.jspdf;
-let estoque = [];
+async function carregarEstoqueServidor() {
+  try {
+    const r = await fetch('/api/estoque');
+    const rows = await r.json();
+    if (Array.isArray(rows) && rows.length) {
+      estoque = rows.map(c => ({
+        id: c.id,
+        nome: c.nome,
+        nomePt: c.nome_pt || '',
+        qtd: c.qtd,
+        set: c.set_name,
+        setCode: c.set_code,
+        scryfallId: c.scryfall_id,
+        cond: c.cond,
+        lang: c.lang,
+        extras: c.extras,
+        foil: !!c.foil,
+        pasta: c.pasta || 'Geral',
+        ml: c.ml || 0,
+        custo: c.custo || 0,
+        pvs: c.pvs || 0,
+        liquidez: c.liquidez || 'C',
+        codigo: c.codigo || '',
+        desconto: c.desconto || 0,
+        obs: c.obs || '',
+        operacao: c.operacao || '',
+        depara: c.depara || '',
+        data: c.data || ''
+      }));
+      filtered = [...estoque];
+      pastas = [...new Set(estoque.map(c => c.pasta || 'Geral'))];
+      if (!pastas.includes('Geral')) pastas.unshift('Geral');
+      renderPastas();
+      renderEstoque();
+    }
+  } catch (e) {
+    console.log('Sem conexão com servidor ou estoque vazio');
+  }
+}
+
+async function salvarEstoqueServidor() {
+  try {
+    const payload = estoque.map(c => ({
+      nome: c.nome,
+      nomePt: c.nomePt || '',
+      qtd: c.qtd,
+      set: c.set,
+      setCode: c.setCode,
+      scryfallId: c.scryfallId,
+      cond: c.cond,
+      lang: c.lang,
+      extras: c.extras,
+      foil: c.foil,
+      pasta: c.pasta,
+      ml: c.ml,
+      custo: c.custo,
+      pvs: c.pvs,
+      liquidez: c.liquidez,
+      codigo: c.codigo,
+      desconto: c.desconto,
+      obs: c.obs,
+      operacao: c.operacao,
+      depara: c.depara,
+      data: c.data
+    }));
+    await fetch('/api/estoque/importar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+  } catch (e) {
+    console.error('Erro ao salvar estoque', e);
+  }
+}
 let filtered = [];
 let orcamentoAtual = null;
 
@@ -793,6 +866,7 @@ function adicionarAoEstoque() {
   pendingImport = [];
   renderPastas();
   renderEstoque();
+  salvarEstoqueServidor();
   alert(`Cartas adicionadas na pasta "${pasta}".`);
 }
 
@@ -1045,6 +1119,7 @@ function removerLinha(i) {
   const oi = estoque.indexOf(item);
   if (oi >= 0) estoque.splice(oi, 1);
   renderEstoque();
+  salvarEstoqueServidor();
 }
 
 function adicionarManual() {
@@ -1073,6 +1148,7 @@ function adicionarManual() {
   filtered = [...estoque];
   renderPastas();
   renderEstoque();
+  salvarEstoqueServidor();
   document.getElementById('manNome').value = '';
   document.getElementById('manNomePt').value = '';
   alert(`Item adicionado na pasta "${pasta}".`);
@@ -1413,6 +1489,7 @@ function darBaixa() {
   filtered = [...estoque];
   renderEstoque();
   renderPastas();
+  salvarEstoqueServidor();
   renderHistorico();
   document.getElementById('btnBaixa').style.display = 'none';
   document.getElementById('pedResultado').style.display = 'none';
@@ -1476,6 +1553,7 @@ document.querySelectorAll('nav button').forEach(btn => {
 });
 
 document.addEventListener('DOMContentLoaded', () => {
+  carregarEstoqueServidor();
   renderPastas();
   renderHistorico();
   renderOrcamentosSalvos();
