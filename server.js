@@ -12,73 +12,101 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Listar estoque
-app.get('/api/estoque', (req, res) => {
-  db.all('SELECT * FROM cartas ORDER BY nome', [], (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
+app.get('/api/estoque', async (req, res) => {
+  try {
+    const { rows } = await db.query('SELECT * FROM cartas ORDER BY nome');
     res.json(rows);
-  });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// Importar / substituir estoque
-app.post('/api/estoque/importar', (req, res) => {
+// Substituir estoque completo (usado em exclusões e sincronização total)
+app.post('/api/estoque/substituir', async (req, res) => {
   const cartas = req.body;
   if (!Array.isArray(cartas)) return res.status(400).json({ error: 'Envie um array de cartas' });
 
-  db.serialize(() => {
-    db.run('DELETE FROM cartas');
-    const stmt = db.prepare(`INSERT INTO cartas 
-      (nome, qtd, set_name, set_code, scryfall_id, cond, lang, extras, foil, pasta, ml, custo, pvs, liquidez)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-
-    cartas.forEach(c => {
-      stmt.run(
-        c.nome, c.qtd || 1, c.set || '', c.setCode || '', c.scryfallId || '',
-        c.cond || 'NM', c.lang || 'EN', c.extras || '', c.foil ? 1 : 0,
-        c.pasta || 'Geral', c.ml || 0, c.custo || 0, c.pvs || 0, c.liquidez || 'C'
+  try {
+    await db.query('DELETE FROM cartas');
+    for (const c of cartas) {
+      await db.query(
+        `INSERT INTO cartas (nome, nome_pt, qtd, set_name, set_code, scryfall_id, cond, lang, extras, foil, pasta, ml, custo, pvs, liquidez, codigo, desconto, obs, operacao, depara, data)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`,
+        [
+          c.nome, c.nomePt || '', c.qtd || 1, c.set || '', c.setCode || '', c.scryfallId || '',
+          c.cond || 'NM', c.lang || 'EN', c.extras || '', c.foil ? 1 : 0,
+          c.pasta || 'Geral', c.ml || 0, c.custo || 0, c.pvs || 0, c.liquidez || 'C',
+          c.codigo || '', c.desconto || 0, c.obs || '', c.operacao || '', c.depara || '', c.data || ''
+        ]
       );
-    });
-    stmt.finalize();
-  });
+    }
+    res.json({ ok: true, total: cartas.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
-  res.json({ ok: true, importadas: cartas.length });
+// Importar / adicionar ao estoque (sem apagar o existente)
+app.post('/api/estoque/importar', async (req, res) => {
+  const cartas = req.body;
+  if (!Array.isArray(cartas)) return res.status(400).json({ error: 'Envie um array de cartas' });
+
+  try {
+    for (const c of cartas) {
+      await db.query(
+        `INSERT INTO cartas (nome, nome_pt, qtd, set_name, set_code, scryfall_id, cond, lang, extras, foil, pasta, ml, custo, pvs, liquidez, codigo, desconto, obs, operacao, depara, data)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`,
+        [
+          c.nome, c.nomePt || '', c.qtd || 1, c.set || '', c.setCode || '', c.scryfallId || '',
+          c.cond || 'NM', c.lang || 'EN', c.extras || '', c.foil ? 1 : 0,
+          c.pasta || 'Geral', c.ml || 0, c.custo || 0, c.pvs || 0, c.liquidez || 'C',
+          c.codigo || '', c.desconto || 0, c.obs || '', c.operacao || '', c.depara || '', c.data || ''
+        ]
+      );
+    }
+    res.json({ ok: true, importadas: cartas.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Atualizar uma carta
-app.put('/api/estoque/:id', (req, res) => {
+app.put('/api/estoque/:id', async (req, res) => {
   const { id } = req.params;
   const campos = req.body;
   const sets = [];
   const vals = [];
+  let i = 1;
   Object.keys(campos).forEach(k => {
-    sets.push(`${k} = ?`);
+    sets.push(`${k} = $${i++}`);
     vals.push(campos[k]);
   });
   vals.push(id);
-  db.run(`UPDATE cartas SET ${sets.join(', ')} WHERE id = ?`, vals, function(err) {
-    if (err) return res.status(500).json({ error: err.message });
+  try {
+    await db.query(`UPDATE cartas SET ${sets.join(', ')} WHERE id = $${i}`, vals);
     res.json({ ok: true });
-  });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// Atualizar ML de todas as cartas (consulta Ligamagic)
+// Atualizar ML de todas as cartas
 app.post('/api/atualizar-ml', async (req, res) => {
-  db.all('SELECT id, nome FROM cartas', [], async (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
-
+  try {
+    const { rows } = await db.query('SELECT id, nome FROM cartas');
     let atualizadas = 0;
     for (const row of rows) {
       const preco = await buscarPrecoLigamagic(row.nome);
       if (preco !== null) {
-        await new Promise(resolve => {
-          db.run('UPDATE cartas SET ml = ?, atualizado_em = datetime("now") WHERE id = ?', [preco, row.id], resolve);
-        });
+        await db.query('UPDATE cartas SET ml = $1, atualizado_em = NOW() WHERE id = $2', [preco, row.id]);
         atualizadas++;
       }
-      // Pausa para não sobrecarregar a Ligamagic
-      await new Promise(r => setTimeout(r, 800));
+      await new Promise(r => setTimeout(r, 350));
     }
     res.json({ ok: true, atualizadas, total: rows.length });
-  });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.listen(PORT, () => {
