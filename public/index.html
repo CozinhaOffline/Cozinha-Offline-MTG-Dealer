@@ -108,10 +108,7 @@
       </div>
       <div class="alert">
         <strong>Manabox:</strong> Collection → menu → Export → CSV.<br>
-        <strong>Ligamagic:</strong> Exporte a coleção no formato “Padrão LigaMagic CSV [Modelo para Coleções]”.<br>
-        <button class="secondary small" onclick="carregarExemplo()">Carregar dados de exemplo (para testar)</button>
-        <button class="secondary small" onclick="limparEstoque()">Limpar estoque</button>
-        <button class="primary small" onclick="atualizarML()">Atualizar ML (Ligamagic)</button>
+        <strong>Ligamagic:</strong> Exporte a coleção no formato “Padrão LigaMagic CSV [Modelo para Coleções]”.
       </div>
     </div>
 
@@ -126,12 +123,14 @@
             <option value="depara">De/Para</option>
             <option value="obs">OBS</option>
             <option value="liquidez">Liquidez</option>
+            <option value="pasta">Pasta</option>
             <option value="cond">Estado</option>
             <option value="lang">Idioma</option>
             <option value="extras">Extras</option>
+        <option value="pasta">Pasta</option>
           </select>
         </div>
-        <div><label>Valor</label><input type="text" id="bulkValue" placeholder="-20 ou valor"></div>
+        <div><label>Valor / Pasta</label><input type="text" id="bulkValue" placeholder="-20 ou nome da pasta"></div>
         <div><label>Aplicar em</label>
           <select id="bulkTarget">
             <option value="todos">Todos (filtrados)</option>
@@ -168,7 +167,39 @@
         </div>
         <div style="align-self:end;"><button class="secondary small" onclick="aplicarFiltros()">Aplicar ordenação</button></div>
       </div>
-      <p class="muted">Use os filtros nos cabeçalhos das colunas. A edição em massa aplica apenas nas linhas visíveis pelos filtros.</p>
+      <div class="filters" style="margin-top:0.6rem;">
+        <div><label>Transferir selecionados para</label>
+          <select id="transferPasta"><option value="">Escolha a pasta...</option></select>
+        </div>
+        <div style="align-self:end;"><button class="primary small" onclick="transferirSelecionados()">Transferir</button></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Adicionar item manualmente</h2>
+      <div class="filters">
+        <div><label>Nome EN *</label><input type="text" id="manNome" placeholder="Nome em inglês"></div>
+        <div><label>Nome PT</label><input type="text" id="manNomePt" placeholder="Nome em português"></div>
+        <div><label>Edição</label><input type="text" id="manSet" placeholder="Nome da edição"></div>
+        <div><label>Sigla</label><input type="text" id="manSigla" placeholder="NCC, CMM..."></div>
+        <div><label>Qde.</label><input type="number" id="manQtd" value="1" min="1"></div>
+        <div><label>Estado</label><select id="manCond"><option>NM</option><option>SP</option><option>MP</option><option>HP</option><option>D</option></select></div>
+        <div><label>Idioma</label><select id="manLang"><option>PT</option><option>EN</option></select></div>
+        <div><label>Extras</label><input type="text" id="manExtras" placeholder="Foil, Showcase..."></div>
+        <div><label>LLP (R$)</label><input type="text" id="manLlp" placeholder="0,00"></div>
+        <div><label>Desconto (%)</label><input type="text" id="manDesc" placeholder="-20 ou 30"></div>
+        <div><label>Liquidez</label><select id="manLiq"><option>A</option><option>B</option><option selected>C</option><option>D</option></select></div>
+      </div>
+      <button class="primary small" onclick="adicionarManual()">Adicionar ao estoque</button>
+    </div>
+
+    <div class="card">
+      <h2>Pastas</h2>
+      <div class="filters">
+        <div><label>Nova pasta</label><input type="text" id="novaPasta" placeholder="Nome da pasta"></div>
+        <div style="align-self:end;"><button class="primary small" onclick="criarPasta()">Criar pasta</button></div>
+      </div>
+      <div id="listaPastas" style="margin-top:0.8rem;display:flex;flex-wrap:wrap;"></div>
     </div>
 
     <div class="card">
@@ -522,17 +553,20 @@ function calcPVS(card) {
   const llp = parseFloat(card.ml) || 0;
   const custo = parseFloat(card.custo) || 0;
   const custo20 = custo * 1.2;
+  const nome = (card.nome || '').toLowerCase();
+  if (['plains','island','swamp','mountain','forest'].includes(nome)) return 0.35;
   let pvs = Math.max(llp, custo20);
   if (card.liquidez === 'A' && llp > 0) {
     let mult = 1;
     if (llp <= 1) mult = 3;
     else if (llp <= 2) mult = 2.5;
     else if (llp <= 5) mult = 2;
-    else if (llp <= 10) mult = 1.5;
-    else if (llp <= 50) mult = 1.25;
-    const pvsA = llp * mult;
-    pvs = Math.max(pvs, pvsA);
+    else if (llp <= 10) mult = 1.4;
+    else if (llp <= 50) mult = 1.15;
+    else mult = 1.025;
+    pvs = Math.max(pvs, llp * mult);
   }
+  if (pvs < Math.max(llp, custo20)) pvs = Math.max(llp, custo20) * 1.025;
   return Math.round(pvs * 100) / 100;
 }
 
@@ -651,14 +685,92 @@ function cancelarImportacao() {
   pendingImport = [];
 }
 
+let pastas = ['Geral'];
+
+function criarPasta() {
+  const nome = document.getElementById('novaPasta').value.trim();
+  if (!nome) return;
+  if (pastas.includes(nome)) { alert('Pasta já existe.'); return; }
+  pastas.push(nome);
+  document.getElementById('novaPasta').value = '';
+  renderPastas();
+}
+
+function excluirPasta(nome) {
+  if (nome === 'Geral') { alert('Não é possível excluir a pasta Geral.'); return; }
+  if (!confirm(`Excluir a pasta "${nome}"? Os itens serão movidos para Geral.`)) return;
+  estoque.forEach(c => { if (c.pasta === nome) c.pasta = 'Geral'; });
+  pastas = pastas.filter(p => p !== nome);
+  filtered = [...estoque];
+  renderPastas();
+  renderEstoque();
+}
+
+function renderPastas() {
+  const el = document.getElementById('listaPastas');
+  if (!el) return;
+  el.innerHTML = pastas.map(p => {
+    const qtd = estoque.filter(c => (c.pasta || 'Geral') === p).reduce((s, c) => s + (c.qtd || 0), 0);
+    const active = window.pastaAtiva === p ? 'border:2px solid var(--vermelho);' : 'border:1px solid var(--borda);';
+    return `<div onclick="filtrarPorPasta('${p}')" style="display:inline-block;width:180px;margin:0.4rem;padding:1rem;background:#f8fafc;border-radius:10px;cursor:pointer;${active}">
+      <div style="font-weight:600;color:var(--azul);">${p}</div>
+      <div class="muted">${qtd} cartas</div>
+      ${p !== 'Geral' ? `<button class="secondary small" style="background:#c41e3a;margin-top:0.4rem;" onclick="event.stopPropagation();excluirPasta('${p}')">Excluir</button>` : ''}
+    </div>`;
+  }).join('');
+  const sel = document.getElementById('transferPasta');
+  if (sel) sel.innerHTML = '<option value="">Escolha a pasta...</option>' + pastas.map(p => `<option value="${p}">${p}</option>`).join('');
+}
+
+function transferirSelecionados() {
+  const destino = document.getElementById('transferPasta').value;
+  if (!destino) { alert('Escolha a pasta de destino.'); return; }
+  let count = 0;
+  document.querySelectorAll('.row-check:checked').forEach(cb => {
+    const i = +cb.dataset.i;
+    if (filtered[i]) {
+      filtered[i].pasta = destino;
+      const oi = estoque.indexOf(filtered[i]);
+      if (oi >= 0) estoque[oi].pasta = destino;
+      count++;
+    }
+  });
+  if (count === 0) { alert('Marque pelo menos um item.'); return; }
+  renderPastas();
+  renderEstoque();
+  alert(`${count} item(ns) transferido(s) para "${destino}".`);
+}
+
+function filtrarPorPasta(nome) {
+  window.pastaAtiva = nome;
+  filtered = estoque.filter(c => (c.pasta || 'Geral') === nome);
+  renderPastas();
+  renderEstoque();
+}
+
+function escolherPasta(callback) {
+  const opcoes = pastas.map((p, i) => `${i + 1}. ${p}`).join('\n');
+  const escolha = prompt(`Escolha a pasta:\n${opcoes}\n\nDigite o número ou um novo nome para criar pasta:`);
+  if (!escolha) return null;
+  const num = parseInt(escolha);
+  if (num >= 1 && num <= pastas.length) return pastas[num - 1];
+  const nova = escolha.trim();
+  if (nova && !pastas.includes(nova)) pastas.push(nova);
+  return nova;
+}
+
 function adicionarAoEstoque() {
   if (!pendingImport.length) { alert('Nada para importar.'); return; }
+  const pasta = escolherPasta();
+  if (!pasta) return;
+  pendingImport.forEach(c => c.pasta = pasta);
   estoque = estoque.concat(pendingImport);
   filtered = [...estoque];
   document.getElementById('importModal').style.display = 'none';
   pendingImport = [];
+  renderPastas();
   renderEstoque();
-  alert(`Adicionadas ${estoque.length} cartas ao estoque.`);
+  alert(`Cartas adicionadas na pasta "${pasta}".`);
 }
 
 function limparEstoque() {
@@ -903,10 +1015,44 @@ function renderEstoque() {
 
 function removerLinha(i) {
   const item = filtered[i];
+  if (!item) return;
+  const msg = `Tem certeza que deseja excluir ${item.nome || ''} (${item.set || '-'}, ${item.lang || '-'}, ${item.cond || '-'}, ${item.extras || '-'}) do estoque?`;
+  if (!confirm(msg)) return;
   filtered.splice(i, 1);
   const oi = estoque.indexOf(item);
   if (oi >= 0) estoque.splice(oi, 1);
   renderEstoque();
+}
+
+function adicionarManual() {
+  const nome = document.getElementById('manNome').value.trim();
+  if (!nome) { alert('Informe o nome em inglês.'); return; }
+  const card = {
+    nome,
+    nomePt: document.getElementById('manNomePt').value.trim(),
+    set: document.getElementById('manSet').value.trim(),
+    setCode: document.getElementById('manSigla').value.trim().toLowerCase(),
+    qtd: parseInt(document.getElementById('manQtd').value) || 1,
+    cond: document.getElementById('manCond').value,
+    lang: document.getElementById('manLang').value,
+    extras: document.getElementById('manExtras').value.trim(),
+    ml: parseMoney(document.getElementById('manLlp').value),
+    desconto: parsePct(document.getElementById('manDesc').value),
+    liquidez: document.getElementById('manLiq').value,
+    codigo: '', operacao: '', depara: '', obs: '', data: '',
+    custo: 0, pvs: 0, pasta: 'Manual', foil: /foil/i.test(document.getElementById('manExtras').value)
+  };
+  aplicarCalculos(card);
+  const pasta = escolherPasta();
+  if (!pasta) return;
+  card.pasta = pasta;
+  estoque.push(card);
+  filtered = [...estoque];
+  renderPastas();
+  renderEstoque();
+  document.getElementById('manNome').value = '';
+  document.getElementById('manNomePt').value = '';
+  alert(`Item adicionado na pasta "${pasta}".`);
 }
 
 function toggleSelectAll(cb) {
@@ -1087,6 +1233,9 @@ cardPopup.id = 'cardPopup';
 document.body.appendChild(cardPopup);
 
 let popupTimeout;
+document.addEventListener('DOMContentLoaded', () => {
+  renderPastas();
+});
 document.addEventListener('mouseover', async function(e) {
   const td = e.target.closest('.card-name');
   if (!td) return;
