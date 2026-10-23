@@ -33,7 +33,9 @@ async function init() {
       atualizado_em TIMESTAMP DEFAULT NOW()
     )
   `);
-  console.log('Tabela cartas pronta');
+  await pool.query(`ALTER TABLE cartas ADD COLUMN IF NOT EXISTS cor TEXT`);
+  await pool.query(`ALTER TABLE cartas ADD COLUMN IF NOT EXISTS raridade TEXT`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS classe_a (nome TEXT PRIMARY KEY)`);
 }
 
 init().catch(err => console.error('Erro ao criar tabela:', err));
