@@ -121,6 +121,11 @@
     <div class="card">
       <h2>Filtros e edição em massa</h2>
       <div class="filters" style="margin-bottom:0.6rem;">
+        <div><label>Nome</label><input type="text" id="fNomeBulk" placeholder="Nome em inglês ou português" oninput="aplicarFiltros()"></div>
+        <div><label>Cor</label><input type="text" id="fCorBulk" placeholder="W, U, B, R, G, M..." oninput="aplicarFiltros()"></div>
+        <div style="align-self:end;"><button class="secondary small" onclick="limparFiltros()">Limpar filtros</button></div>
+      </div>
+      <div class="filters" style="margin-bottom:0.6rem;">
         <div><label>Campo</label>
           <select id="bulkField">
             <option value="desconto">Desconto</option>
@@ -179,6 +184,13 @@
         </div>
         <div style="align-self:end;"><button class="primary small" onclick="transferirSelecionados()">Transferir</button></div>
       </div>
+    </div>
+
+    <div class="card">
+      <h2>Lista Classe A</h2>
+      <p class="muted">Uma carta por linha, em inglês. Cartas desta lista ficam com liquidez A. Você pode editar a lista e salvar.</p>
+      <textarea id="listaClasseA" style="min-height:180px;"></textarea>
+      <button class="primary small" onclick="salvarListaClasseA()">Salvar lista e atualizar estoque</button>
     </div>
 
     <div class="card">
@@ -363,13 +375,17 @@ async function carregarEstoqueServidor() {
         obs: c.obs || '',
         operacao: c.operacao || '',
         depara: c.depara || '',
-        data: c.data || ''
+        data: c.data || '',
+        cor: c.cor || '',
+        raridade: c.raridade || ''
       }));
+      const mudou = aplicarClasseANoEstoque();
       filtered = [...estoque];
       pastas = [...new Set(estoque.map(c => c.pasta || 'Geral'))];
       if (!pastas.includes('Geral')) pastas.unshift('Geral');
       renderPastas();
-      renderEstoque();
+      aplicarFiltros();
+      if (mudou) salvarEstoqueServidor();
     }
   } catch (e) {
     console.log('Sem conexão com servidor ou estoque vazio');
@@ -399,7 +415,9 @@ async function salvarEstoqueServidor() {
       obs: c.obs,
       operacao: c.operacao,
       depara: c.depara,
-      data: c.data
+      data: c.data,
+      cor: c.cor || '',
+      raridade: c.raridade || ''
     }));
     await fetch('/api/estoque/substituir', {
       method: 'POST',
@@ -412,6 +430,412 @@ async function salvarEstoqueServidor() {
 }
 let filtered = [];
 let orcamentoAtual = null;
+
+const CLASSE_A_PADRAO = `
+Spirebluff Canal
+Chromatic Orrery
+Game Trail
+Fire Diamond
+Eclipsed Steppe
+Port Town
+Simic Signet
+Chromatic Lantern
+Commander's Sphere
+Fire-Lit Thicket
+Charcoal Diamond
+Viridescent Bog
+Blood Artist
+Utopia Sprawl
+Reality Shift
+Mana Geyser
+Wayfarer's Bauble
+Nature's Claim
+Unexpected Windfall
+Toski, Bearer of Secrets
+Moldervine Reclamation
+Blooming Marsh
+Azorius Signet
+Go for the Throat
+Sunscorched Divide
+Radiant Summit
+Skycloud Expanse
+Red Elemental Blast
+Sunken Ruins
+Cursed Mirror
+Temple of Plenty
+Ephemerate
+Mox Amber
+Botanical Sanctum
+Temple of Enlightenment
+Reclamation Sage
+Read the Bones
+Prismari Command
+Talisman of Creativity
+Rakdos Signet
+Gilded Lotus
+Golgari Signet
+Temple of Malady
+Foreboding Ruins
+Bastion of Remembrance
+Graven Cairns
+Temple of Malice
+Inspiring Vantage
+Furycalm Snarl
+Consider
+Diabolic Tutor
+Vineglimmer Snarl
+Dimir Signet
+Darkwater Catacombs
+Choked Estuary
+Frostboil Snarl
+Bala Ged Recovery
+Temple of Triumph
+Wear / Tear
+Mossfire Valley
+Harmonize
+Darkslick Shores
+Mind Stone
+Decanter of Endless Water
+Shadowblood Ridge
+Wooded Bastion
+Vernal Fen
+Thran Dynamo
+Mystic Gate
+Overflowing Basin
+Ferrous Lake
+Temple of Abandon
+Boros Signet
+Thought Vessel
+Blackcleave Cliffs
+Prismatic Lens
+Bender's Waterskin
+Cascading Cataracts
+Talisman of Curiosity
+Crystal Quarry
+Desolate Mire
+Copperline Gorge
+Relic of Sauron
+Sungrass Prairie
+Twilight Mire
+Seachrome Coast
+Concealed Courtyard
+Razorverge Thicket
+Sol Ring
+Necroblossom Snarl
+Temple of Deceit
+Temple of Mystery
+Shineshadow Snarl
+Scorched Geyser
+Sodden Verdure
+Izzet Signet
+Patchwork Banner
+Moss Diamond
+Talisman of Unity
+Midnight Clock
+Patriar's Seal
+Talisman of Progress
+Marble Diamond
+Talisman of Impulse
+Talisman of Indulgence
+Liquimetal Torque
+Everflowing Chalice
+Hedron Archive
+Lotus Petal
+Heraldic Banner
+Talisman of Hierarchy
+Arcane Signet
+Gruul Signet
+Talisman of Resilience
+Talisman of Conviction
+Caged Sun
+Relic of Legends
+Selesnya Signet
+Sky Diamond
+Fellwar Stone
+Talisman of Dominance
+Orzhov Signet
+Sulfur Falls
+Raffine's Tower
+Morphic Pool
+Dragonskull Summit
+Path of Ancestry
+Flooded Grove
+Boseiju, Who Endures
+Xander's Lounge
+Savai Triome
+Smoldering Marsh
+Ziatora's Proving Ground
+Exotic Orchard
+Reliquary Tower
+Rogue's Passage
+Nomad Outpost
+Otawara, Soaring City
+Sacred Foundry
+The World Tree
+Rejuvenating Springs
+Breeding Pool
+Opulent Palace
+Canopy Vista
+Undergrowth Stadium
+Spara's Headquarters
+Fortified Village
+Zagoth Triome
+Jungle Shrine
+Godless Shrine
+Watery Grave
+Bojuka Bog
+Stormcarved Coast
+Crumbling Necropolis
+Mystic Monastery
+Glacial Fortress
+Brushland
+Blood Crypt
+Shivan Reef
+Sulfurous Springs
+Jetmir's Garden
+Stomping Ground
+Adarkar Wastes
+Bountiful Promenade
+Command Tower
+Seaside Citadel
+Ketria Triome
+Llanowar Wastes
+Fetid Heath
+Deserted Beach
+Hallowed Fountain
+Overgrown Tomb
+Yavimaya Coast
+Haunted Ridge
+Luxury Suite
+Savage Lands
+Sunpetal Grove
+Golgari Rot Farm
+Underground River
+Temple of Epiphany
+Sandsteppe Citadel
+Indatha Triome
+Prairie Stream
+Deathcap Glade
+Rugged Prairie
+Simic Growth Chamber
+Frontier Bivouac
+Shattered Sanctum
+Drowned Catacomb
+Shipwreck Marsh
+Vault of Champions
+Caves of Koilos
+Karplusan Forest
+Raugrin Triome
+Dreamroot Cascade
+Evolving Wilds
+Woodland Cemetery
+Sunken Hollow
+Isolated Chapel
+Clifftop Retreat
+Battlefield Forge
+Training Center
+Arcane Sanctum
+Temple Garden
+Steam Vents
+Rootbound Crag
+Sea of Clouds
+Cascade Bluffs
+Spectator Seating
+Overgrown Farmland
+Spire Garden
+Rockfall Vale
+Hinterland Harbor
+Sundown Pass
+Temple of Silence
+Cinder Glade
+Mystic Retrieval
+Serum Visions
+Unwind
+Overwrite the Multiverse
+Life's Legacy
+Distant Melody
+Tragic Slip
+Ezuri's Predation
+Swan Song
+Frantic Search
+Pyretic Ritual
+Dark Deal
+Vandalblast
+Stock Up
+Nature's Rhythm
+Shamanic Revelation
+Seething Song
+Witherbloom Charm
+Dread Return
+Austere Command
+Damnation
+Cleansing Nova
+Abrupt Decay
+Bant Charm
+Aetherize
+Cyclonic Rift
+Black Sun's Zenith
+Decimate
+Dark Ritual
+Pongify
+Hex Magic
+Genesis Ultimatum
+Time Wipe
+Imperial Seal
+Rite of Flame
+Blasphemous Act
+Merciless Eviction
+Brainstorm
+Ruinous Ultimatum
+Spell Pierce
+Pirate's Pillage
+Cultivate
+Victimize
+Sylvan Scrying
+Essence Flux
+Prismari Charm
+Strike It Rich
+Bedevil
+Faithless Looting
+Grisly Salvage
+Skyshroud Claim
+Nature's Lore
+Withering Torment
+Exsanguinate
+Buried Alive
+Steelshaper's Gift
+Lightning Bolt
+Damn
+Bitter Triumph
+Expressive Iteration
+Deadly Dispute
+Big Score
+Fatehold Charm
+Return to Nature
+Assassin's Trophy
+Torment of Hailfire
+Toxic Deluge
+Feed the Swarm
+Untimely Malfunction
+Crux of Fate
+Counterspell
+Past in Flames
+Stump Stomp
+Boros Charm
+Resculpt
+Stitch Together
+Crippling Fear
+Rise of the Dark Realms
+Vanquish the Horde
+Insurrection
+Farseek
+Crop Rotation
+Crackling Doom
+Noxious Revival
+Dispel
+Open the Armory
+Whir of Invention
+Stroke of Midnight
+Hull Breach
+Kindred Dominance
+Demand Answers
+Dreadbore
+Grab the Prize
+Gitaxian Probe
+Rishkar's Expertise
+Fumigate
+In Garruk's Wake
+Lim-Dûl's Vault
+Farewell
+Dismember
+Sign in Blood
+Fact or Fiction
+Treasure Cruise
+Syphon Mind
+Blasphemous Edict
+Return of the Wildspeaker
+Three Visits
+Ghostly Flicker
+Bubbling Muck
+Solve the Equation
+Dig Through Time
+Cloudshift
+Unearth
+Hunter's Insight
+Wisdom of Ages
+Life from the Loam
+Rakdos Charm
+Despark
+Soul's Majesty
+Painful Truths
+Chain Reaction
+Ram Through
+Void Rend
+Decree of Pain
+Regrowth
+Tear Asunder
+Abrade
+Gaze of Granite
+Rampant Growth
+Abzan Charm
+All Is Dust
+Day of Judgment
+Singularity Rupture
+Chandra's Ignition
+Reforge the Soul
+Defile
+Patriarch's Bidding
+Traverse the Outlands
+Seize the Spoils
+Fell
+Night's Whisper
+Breach the Multiverse
+Thrill of Possibility
+Ringsight
+Casualties of War
+Sevinne's Reclamation
+Idyllic Tutor
+Green Sun's Zenith
+Vindicate
+Dramatic Reversal
+Overwhelming Stampede
+Living Death
+Windfall
+Battle Hymn
+Pull from Tomorrow
+Bridgeworks Battle
+Culling Ritual
+Ponder
+Wrath of God
+Negate
+Blood Money
+Kodama's Reach
+Waterlogged Teachings
+Fabricate
+Mortify
+Krosan Grip
+Shared Roots
+Eerie Ultimatum
+Quandrix Charm
+Disenchant
+Supreme Verdict
+Preordain
+Sheoldred's Edict
+Terminate
+Reprieve
+Beast Within
+Harrow
+Rapid Hybridization
+Revitalizing Repast
+Sink into Stupor
+Putrefy
+Path to Exile
+Roiling Regrowth
+Arcane Denial
+Rewind
+Growth Spiral
+Dovin's Veto
+`;
 
 // Staples universais de alta liquidez (A) — Commander
 const STAPLES_A = [
@@ -469,6 +893,7 @@ function getField(row, keys) {
 
 function classificarLiquidez(nome, extras, ml) {
   const n = (nome || '').toLowerCase().trim();
+  if (ehClasseA(nome)) return 'A';
   const isPimp = /foil|showcase|borderless|extended art|full art|textless|etched/i.test(extras || '');
   const isBasic = /^(island|swamp|mountain|forest|plains|wastes)/i.test(n) || n.includes('basic land');
 
@@ -504,7 +929,7 @@ document.getElementById('csvFile').addEventListener('change', function(e) {
           alert('Nenhuma linha válida encontrada no arquivo. Verifique se é um CSV válido.');
           return;
         }
-        estoque = results.data.map(row => {
+        const importados = results.data.map(row => {
           let nome, nomePt = '', qtd, set, setCode = '', cond, lang, extras, foil, pasta, ml = 0, scryfallId = '', cor = '', raridade = '', obs = '', desconto = 0;
           if (type === 'costorage') {
             nome = getField(row, ['CARD EN', 'Card EN', 'Nome EN']);
@@ -601,13 +1026,12 @@ document.getElementById('csvFile').addEventListener('change', function(e) {
           return card;
         }).filter(Boolean);
 
-        if (estoque.length === 0) {
+        if (importados.length === 0) {
           alert('Nenhuma carta reconhecida. Verifique se o tipo de arquivo está correto e se o CSV tem cabeçalhos.');
           return;
         }
 
-        pendingImport = estoque.slice();
-        estoque = [];
+        pendingImport = importados;
         abrirModalImportacao();
       },
       error: function(err) {
@@ -621,6 +1045,110 @@ document.getElementById('csvFile').addEventListener('change', function(e) {
   };
   reader.readAsText(file, 'UTF-8');
 });
+
+const colFilterVals = {};
+let filtroFoco = null;
+
+function normNome(s) {
+  return String(s || '').toLowerCase().replace(/\s*\/+\s*/g, '/').replace(/\s+/g, ' ').trim();
+}
+
+let classeASet = new Set();
+
+function textoClasseAAtual() {
+  const el = document.getElementById('listaClasseA');
+  if (el && el.value.trim()) return el.value;
+  const salvo = localStorage.getItem('classeALista');
+  if (salvo != null && salvo.trim()) return salvo;
+  return CLASSE_A_PADRAO;
+}
+
+function recarregarClasseASet() {
+  classeASet = new Set();
+  textoClasseAAtual().split(/\r?\n/).forEach(line => {
+    let n = line.trim().replace(/^\d+\s+/, '');
+    if (n) classeASet.add(normNome(n));
+  });
+}
+
+function ehClasseA(nome) {
+  if (!classeASet.size) recarregarClasseASet();
+  return classeASet.has(normNome(nome));
+}
+
+function aplicarClasseA(card) {
+  if (!ehClasseA(card.nome)) return false;
+  if (card.liquidez === 'A') return false;
+  card.liquidez = 'A';
+  aplicarCalculos(card);
+  return true;
+}
+
+function aplicarClasseANoEstoque() {
+  let n = 0;
+  estoque.forEach(c => { if (aplicarClasseA(c)) n++; });
+  return n;
+}
+
+async function carregarListaClasseA() {
+  const el = document.getElementById('listaClasseA');
+  let texto = localStorage.getItem('classeALista');
+  let servidorVazio = false;
+  try {
+    const r = await fetch('/api/classe-a');
+    if (r.ok) {
+      const nomes = await r.json();
+      if (Array.isArray(nomes) && nomes.length) {
+        texto = nomes.join('\n');
+        localStorage.setItem('classeALista', texto);
+      } else if (Array.isArray(nomes)) {
+        servidorVazio = true;
+      }
+    }
+  } catch (e) {}
+  if (!texto) texto = CLASSE_A_PADRAO;
+  if (el) el.value = texto;
+  recarregarClasseASet();
+  if (servidorVazio) {
+    const linhas = texto.split(/\r?\n/).map(l => l.trim().replace(/^\d+\s+/, '')).filter(Boolean);
+    fetch('/api/classe-a', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(linhas)
+    }).catch(() => {});
+  }
+  if (estoque.length) {
+    const mudou = aplicarClasseANoEstoque();
+    aplicarFiltros();
+    if (mudou) salvarEstoqueServidor();
+  }
+}
+
+async function salvarListaClasseA() {
+  const el = document.getElementById('listaClasseA');
+  const linhas = (el.value || '').split(/\r?\n/).map(l => l.trim().replace(/^\d+\s+/, '')).filter(Boolean);
+  el.value = linhas.join('\n');
+  localStorage.setItem('classeALista', el.value);
+  recarregarClasseASet();
+  const mudou = aplicarClasseANoEstoque();
+  aplicarFiltros();
+  if (mudou) salvarEstoqueServidor();
+  try {
+    await fetch('/api/classe-a', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(linhas)
+    });
+  } catch (e) {}
+  alert(`Lista salva com ${linhas.length} cartas. Liquidez A aplicada no estoque.`);
+}
+
+function valorFiltroCol(c, k) {
+  const raw = c[k];
+  if (k === 'ml' || k === 'custo' || k === 'pvs') return (formatMoney(raw) + ' ' + String(raw ?? '')).toLowerCase();
+  if (k === 'desconto') return (formatPct(raw) + ' ' + String(raw ?? '')).toLowerCase();
+  return String(raw ?? '').toLowerCase();
+}
 
 function formatMoney(v) {
   const n = parseFloat(v) || 0;
@@ -839,9 +1367,8 @@ function transferirSelecionados() {
 
 function filtrarPorPasta(nome) {
   window.pastaAtiva = nome;
-  filtered = estoque.filter(c => (c.pasta || 'Geral') === nome);
   renderPastas();
-  renderEstoque();
+  aplicarFiltros();
 }
 
 function escolherPasta(callback) {
@@ -978,28 +1505,18 @@ function calcularPVS(card) {
 }
 
 function aplicarFiltros() {
-  const nome = document.getElementById('fNome')?.value.toLowerCase() || '';
-  const set = document.getElementById('fSet')?.value.toLowerCase() || '';
-  const pasta = document.getElementById('fPasta')?.value.toLowerCase() || '';
-  const cond = document.getElementById('fCond')?.value.toLowerCase() || '';
-  const extras = document.getElementById('fExtras')?.value.toLowerCase() || '';
-  const qtdMin = parseInt(document.getElementById('fQtdMin')?.value) || 0;
+  const nome = (document.getElementById('fNomeBulk')?.value || '').toLowerCase().trim();
+  const cor = (document.getElementById('fCorBulk')?.value || '').toLowerCase().trim();
   const sort = document.getElementById('fSort')?.value || 'nome-az';
-
-  const colFilters = {};
-  document.querySelectorAll('.col-filter').forEach(inp => {
-    if (inp.value) colFilters[inp.dataset.k] = inp.value.toLowerCase();
-  });
+  const pastaAtiva = window.pastaAtiva || '';
 
   filtered = estoque.filter(c => {
-    if (nome && !c.nome.toLowerCase().includes(nome)) return false;
-    if (set && !(c.set || '').toLowerCase().includes(set)) return false;
-    if (pasta && !(c.pasta || '').toLowerCase().includes(pasta)) return false;
-    if (cond && !(c.cond || '').toLowerCase().includes(cond)) return false;
-    if (extras && !(c.extras || '').toLowerCase().includes(extras)) return false;
-    if (c.qtd < qtdMin) return false;
-    for (const [k, v] of Object.entries(colFilters)) {
-      if (String(c[k] || '').toLowerCase().indexOf(v) === -1) return false;
+    if (pastaAtiva && (c.pasta || 'Geral') !== pastaAtiva) return false;
+    if (nome && !(c.nome || '').toLowerCase().includes(nome) && !(c.nomePt || '').toLowerCase().includes(nome)) return false;
+    if (cor && !(c.cor || '').toLowerCase().includes(cor)) return false;
+    for (const [k, v] of Object.entries(colFilterVals)) {
+      if (!v) continue;
+      if (valorFiltroCol(c, k).indexOf(v) === -1) return false;
     }
     return true;
   });
@@ -1031,14 +1548,14 @@ function aplicarFiltros() {
 }
 
 function limparFiltros() {
-  document.getElementById('fNome').value = '';
-  document.getElementById('fSet').value = '';
-  document.getElementById('fPasta').value = '';
-  document.getElementById('fCond').value = '';
-  document.getElementById('fExtras').value = '';
-  document.getElementById('fQtdMin').value = '';
-  filtered = [...estoque];
-  renderEstoque();
+  const nome = document.getElementById('fNomeBulk');
+  const cor = document.getElementById('fCorBulk');
+  if (nome) nome.value = '';
+  if (cor) cor.value = '';
+  Object.keys(colFilterVals).forEach(k => delete colFilterVals[k]);
+  window.pastaAtiva = '';
+  renderPastas();
+  aplicarFiltros();
 }
 
 let viewMode = 'detail';
@@ -1058,12 +1575,14 @@ function renderEstoque() {
   const thead = document.getElementById('tableHeader');
   const tbody = document.querySelector('#estoqueTable tbody');
   tbody.innerHTML = '';
-  if (!filtered.length) {
+  if (!estoque.length) {
     document.getElementById('estoqueEmpty').style.display = 'block';
+    document.getElementById('estoqueEmpty').textContent = 'Nenhum estoque carregado ainda. Importe um CSV acima.';
     thead.innerHTML = '';
     return;
   }
-  document.getElementById('estoqueEmpty').style.display = 'none';
+  document.getElementById('estoqueEmpty').style.display = filtered.length ? 'none' : 'block';
+  if (!filtered.length) document.getElementById('estoqueEmpty').textContent = 'Nenhum item com esses filtros.';
 
   const cols = viewMode === 'simple'
     ? [['qtd','Qde.'],['nome','NOME EN'],['set','EDIÇÃO'],['lang','Idioma'],['cond','Estado'],['ml','LLP'],['pvs','PVS']]
@@ -1074,8 +1593,25 @@ function renderEstoque() {
     (viewMode === 'detail' ? '<th></th>' : '');
 
   document.querySelectorAll('.col-filter').forEach(inp => {
-    inp.oninput = aplicarFiltros;
+    const k = inp.dataset.k;
+    if (colFilterVals[k]) inp.value = colFilterVals[k];
+    inp.addEventListener('input', () => {
+      filtroFoco = { k, pos: inp.selectionStart };
+      colFilterVals[k] = inp.value.toLowerCase();
+      aplicarFiltros();
+    });
+    inp.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') ev.preventDefault();
+    });
   });
+  if (filtroFoco) {
+    const el = document.querySelector(`.col-filter[data-k="${filtroFoco.k}"]`);
+    if (el) {
+      el.focus();
+      const pos = Math.min(filtroFoco.pos || el.value.length, el.value.length);
+      el.setSelectionRange(pos, pos);
+    }
+  }
 
   filtered.forEach((c, i) => {
     aplicarCalculos(c);
@@ -1146,6 +1682,7 @@ function adicionarManual() {
     codigo: '', operacao: '', depara: '', obs: '', data: '',
     custo: 0, pvs: 0, pasta: 'Manual', foil: /foil/i.test(document.getElementById('manExtras').value)
   };
+  if (ehClasseA(card.nome)) card.liquidez = 'A';
   aplicarCalculos(card);
   const pasta = escolherPasta();
   if (!pasta) return;
@@ -1558,8 +2095,9 @@ document.querySelectorAll('nav button').forEach(btn => {
   });
 });
 
-document.addEventListener('DOMContentLoaded', () => {
-  carregarEstoqueServidor();
+document.addEventListener('DOMContentLoaded', async () => {
+  await carregarListaClasseA();
+  await carregarEstoqueServidor();
   renderPastas();
   renderHistorico();
   renderOrcamentosSalvos();
