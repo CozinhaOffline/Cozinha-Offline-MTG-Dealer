@@ -111,11 +111,18 @@ app.post('/api/atualizar-ml', async (req, res) => {
 
 // Teste de conexão com o banco
 app.get('/api/status', async (req, res) => {
+  const versao = 'pg-v2';
+  if (!process.env.DATABASE_URL) {
+    return res.json({ ok: false, versao, banco: 'falhou', erro: 'DATABASE_URL nao esta configurada no Render' });
+  }
+  if (typeof db.query !== 'function') {
+    return res.json({ ok: false, versao, banco: 'falhou', erro: 'O arquivo db.js antigo ainda esta no ar. Substitua db.js e package.json.' });
+  }
   try {
     const { rows } = await db.query('SELECT COUNT(*) AS total FROM cartas');
-    res.json({ ok: true, total: rows[0].total, banco: 'conectado' });
+    res.json({ ok: true, versao, total: rows[0].total, banco: 'conectado' });
   } catch (err) {
-    res.json({ ok: false, erro: err.message, banco: 'falhou' });
+    res.json({ ok: false, versao, erro: err.message, banco: 'falhou' });
   }
 });
 
