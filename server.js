@@ -109,6 +109,16 @@ app.post('/api/atualizar-ml', async (req, res) => {
   }
 });
 
+// Teste de conexão com o banco
+app.get('/api/status', async (req, res) => {
+  try {
+    const { rows } = await db.query('SELECT COUNT(*) AS total FROM cartas');
+    res.json({ ok: true, total: rows[0].total, banco: 'conectado' });
+  } catch (err) {
+    res.json({ ok: false, erro: err.message, banco: 'falhou' });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Plataforma rodando em http://localhost:${PORT}`);
 });
