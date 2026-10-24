@@ -93,6 +93,7 @@
   <button data-tab="orcamento">Orçamento</button>
   <button data-tab="avaliador">Avaliador de Listas</button>
   <button data-tab="ajuda">Ajuda</button>
+  <button data-tab="config">Configurações</button>
 </nav>
 <main>
   <div id="estoque" class="tab active">
@@ -188,13 +189,6 @@
         <div style="align-self:end;"><button class="secondary small" style="background:#c41e3a;" onclick="excluirSelecionados()">Excluir selecionados</button></div>
         <div style="align-self:end;"><button class="secondary small" style="background:#c41e3a;" onclick="excluirFiltrados()">Excluir o que está filtrado</button></div>
       </div>
-    </div>
-
-    <div class="card">
-      <h2>Lista Classe A</h2>
-      <p class="muted">Uma carta por linha, em inglês. Cartas desta lista ficam com liquidez A. Você pode editar a lista e salvar.</p>
-      <textarea id="listaClasseA" style="min-height:180px;"></textarea>
-      <button class="primary small" onclick="salvarListaClasseA()">Salvar lista e atualizar estoque</button>
     </div>
 
     <div class="card">
@@ -333,6 +327,48 @@
       <div id="avalResultado" style="display:none; margin-top:1rem;">
         <h2 id="avalTitulo"></h2>
         <div id="avalConteudo"></div>
+      </div>
+    </div>
+  </div>
+  <div id="config" class="tab">
+    <div class="card">
+      <h2>Liquidez</h2>
+      <h3>Lista Classe A</h3>
+      <p class="muted">Uma carta por linha, em inglês. Cartas desta lista recebem liquidez A, no estoque atual e nas próximas importações.</p>
+      <textarea id="listaClasseA" style="min-height:220px;"></textarea>
+      <button class="primary small" onclick="salvarListaClasseA()">Salvar lista e atualizar estoque</button>
+    </div>
+    <div class="card">
+      <h2>Precificação</h2>
+      <p class="muted">O PVS de cada carta sai destas regras. Terreno básico usa o valor fixo. Nas outras, a liquidez A multiplica o LLP pela faixa. No fim, o PVS não fica abaixo do LLP nem do custo com a margem: se a conta ficar menor, usa o maior dos dois, vezes o multiplicador de piso.</p>
+      <div class="row">
+        <div class="col">
+          <label>PVS dos terrenos básicos (R$)</label>
+          <input type="text" id="cfgPvsBasica" value="0,35">
+        </div>
+        <div class="col">
+          <label>Nomes dos terrenos básicos</label>
+          <input type="text" id="cfgTerras" value="plains, island, swamp, mountain, forest">
+        </div>
+      </div>
+      <div class="row">
+        <div class="col">
+          <label>Margem mínima sobre o custo (%)</label>
+          <input type="text" id="cfgMargemCusto" value="20">
+        </div>
+        <div class="col">
+          <label>Multiplicador de piso</label>
+          <input type="text" id="cfgPisoMult" value="1,025">
+          <p class="muted">Usado só quando o PVS calculado fica abaixo do LLP ou do custo com a margem.</p>
+        </div>
+      </div>
+      <h3>Faixas da liquidez A</h3>
+      <p class="muted">Se o LLP for até o valor da faixa, o PVS dessa carta é o LLP vezes o multiplicador. A última linha vale para tudo que passar das faixas anteriores.</p>
+      <div id="faixasA"></div>
+      <button class="secondary small" type="button" onclick="adicionarFaixaA()">Adicionar faixa</button>
+      <div style="margin-top:1rem;">
+        <button class="primary" type="button" onclick="salvarRegrasPVS(true)">Salvar e recalcular estoque</button>
+        <button class="secondary" type="button" onclick="restaurarRegrasPVS()">Restaurar padrão</button>
       </div>
     </div>
   </div>
@@ -1177,24 +1213,166 @@ function calcCusto(llp, desconto) {
   return Math.round(llp * (1 + d / 100) * 100) / 100;
 }
 
+function regrasPVSPadrao() {
+  return {
+    pvsBasica: 0.35,
+    terras: ['plains', 'island', 'swamp', 'mountain', 'forest'],
+    margemCusto: 20,
+    pisoMult: 1.025,
+    faixasA: [
+      { ate: 1, mult: 3 },
+      { ate: 2, mult: 2.5 },
+      { ate: 5, mult: 2 },
+      { ate: 10, mult: 1.4 },
+      { ate: 50, mult: 1.15 },
+      { ate: null, mult: 1.025 }
+    ]
+  };
+}
+
+let regrasPVS = regrasPVSPadrao();
+
+function lerNumeroCampo(valor, fallback) {
+  const n = parseFloat(String(valor ?? '').replace(/\s/g, '').replace(',', '.'));
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function fmtRegra(n) {
+  return String(n).replace('.', ',');
+}
+
+function lerRegrasDoFormulario() {
+  const faixas = [];
+  document.querySelectorAll('#faixasA .faixa-a').forEach(row => {
+    const ateRaw = row.querySelector('.faixa-ate').value.trim();
+    const mult = lerNumeroCampo(row.querySelector('.faixa-mult').value, 1);
+    const acima = row.dataset.acima === '1' || ateRaw === '';
+    faixas.push({ ate: acima ? null : lerNumeroCampo(ateRaw, 0), mult });
+  });
+  faixas.sort((a, b) => {
+    if (a.ate == null) return 1;
+    if (b.ate == null) return -1;
+    return a.ate - b.ate;
+  });
+  if (!faixas.some(f => f.ate == null)) faixas.push({ ate: null, mult: 1 });
+  return {
+    pvsBasica: lerNumeroCampo(document.getElementById('cfgPvsBasica').value, 0.35),
+    terras: document.getElementById('cfgTerras').value.split(',').map(s => s.trim().toLowerCase()).filter(Boolean),
+    margemCusto: lerNumeroCampo(document.getElementById('cfgMargemCusto').value, 20),
+    pisoMult: lerNumeroCampo(document.getElementById('cfgPisoMult').value, 1.025),
+    faixasA: faixas
+  };
+}
+
+function preencherRegrasNoFormulario() {
+  const r = regrasPVS;
+  const basica = document.getElementById('cfgPvsBasica');
+  if (!basica) return;
+  basica.value = fmtRegra(r.pvsBasica);
+  document.getElementById('cfgTerras').value = (r.terras || []).join(', ');
+  document.getElementById('cfgMargemCusto').value = fmtRegra(r.margemCusto);
+  document.getElementById('cfgPisoMult').value = fmtRegra(r.pisoMult);
+  renderFaixasA();
+}
+
+function renderFaixasA() {
+  const box = document.getElementById('faixasA');
+  if (!box) return;
+  const faixas = regrasPVS.faixasA || [];
+  box.innerHTML = faixas.map((f, i) => {
+    const acima = f.ate == null || i === faixas.length - 1 && f.ate == null;
+    return `<div class="faixa-a filters" data-acima="${f.ate == null ? '1' : '0'}" style="margin-bottom:0.4rem;">
+      <div><label>${f.ate == null ? 'Acima das faixas anteriores' : 'Se o LLP for até (R$)'}</label>
+        <input class="faixa-ate" type="text" ${f.ate == null ? 'disabled placeholder="acima"' : `value="${fmtRegra(f.ate)}"`}></div>
+      <div><label>Multiplicar o LLP por</label>
+        <input class="faixa-mult" type="text" value="${fmtRegra(f.mult)}"></div>
+      <div style="align-self:end;">${f.ate == null ? '' : `<button class="secondary small" type="button" style="background:#c41e3a;" onclick="removerFaixaA(${i})">Remover</button>`}</div>
+    </div>`;
+  }).join('');
+}
+
+function adicionarFaixaA() {
+  regrasPVS = lerRegrasDoFormulario();
+  const acima = regrasPVS.faixasA.filter(f => f.ate == null);
+  const nums = regrasPVS.faixasA.filter(f => f.ate != null);
+  const ultimo = nums.length ? nums[nums.length - 1].ate : 0;
+  nums.push({ ate: Math.round((ultimo + 10) * 100) / 100, mult: 1 });
+  regrasPVS.faixasA = nums.concat(acima.length ? acima : [{ ate: null, mult: 1 }]);
+  renderFaixasA();
+}
+
+function removerFaixaA(i) {
+  regrasPVS = lerRegrasDoFormulario();
+  regrasPVS.faixasA = regrasPVS.faixasA.filter((f, idx) => idx !== i || f.ate == null);
+  if (!regrasPVS.faixasA.some(f => f.ate == null)) regrasPVS.faixasA.push({ ate: null, mult: 1.025 });
+  renderFaixasA();
+}
+
+async function carregarRegrasPVS() {
+  try {
+    const salvo = localStorage.getItem('regrasPVS');
+    if (salvo) regrasPVS = Object.assign(regrasPVSPadrao(), JSON.parse(salvo));
+  } catch (e) {}
+  try {
+    const r = await fetch('/api/config/regras-pvs');
+    if (r.ok) {
+      const data = await r.json();
+      if (data && data.faixasA) {
+        regrasPVS = Object.assign(regrasPVSPadrao(), data);
+        localStorage.setItem('regrasPVS', JSON.stringify(regrasPVS));
+      }
+    }
+  } catch (e) {}
+  preencherRegrasNoFormulario();
+}
+
+async function salvarRegrasPVS(recalcular) {
+  regrasPVS = lerRegrasDoFormulario();
+  localStorage.setItem('regrasPVS', JSON.stringify(regrasPVS));
+  fetch('/api/config/regras-pvs', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(regrasPVS)
+  }).catch(() => {});
+  if (recalcular && estoque.length) {
+    estoque.forEach(aplicarCalculos);
+    aplicarFiltros();
+    salvarEstoqueServidor();
+  }
+  alert(recalcular ? 'Regras salvas e PVS do estoque recalculado.' : 'Regras salvas.');
+}
+
+function restaurarRegrasPVS() {
+  if (!confirm('Voltar as regras de PVS para o padrão da loja?')) return;
+  regrasPVS = regrasPVSPadrao();
+  preencherRegrasNoFormulario();
+  salvarRegrasPVS(true);
+}
+
 function calcPVS(card) {
+  const r = regrasPVS || regrasPVSPadrao();
   const llp = parseFloat(card.ml) || 0;
   const custo = parseFloat(card.custo) || 0;
-  const custo20 = custo * 1.2;
-  const nome = (card.nome || '').toLowerCase();
-  if (['plains','island','swamp','mountain','forest'].includes(nome)) return 0.35;
-  let pvs = Math.max(llp, custo20);
+  const nome = (card.nome || '').toLowerCase().trim();
+  const terras = (r.terras || []).map(t => String(t).toLowerCase().trim());
+  if (terras.includes(nome)) return Math.round((parseFloat(r.pvsBasica) || 0) * 100) / 100;
+  const margem = 1 + (parseFloat(r.margemCusto) || 0) / 100;
+  const pisoBase = Math.max(llp, custo * margem);
+  let pvs = llp;
   if (card.liquidez === 'A' && llp > 0) {
-    let mult = 1;
-    if (llp <= 1) mult = 3;
-    else if (llp <= 2) mult = 2.5;
-    else if (llp <= 5) mult = 2;
-    else if (llp <= 10) mult = 1.4;
-    else if (llp <= 50) mult = 1.15;
-    else mult = 1.025;
-    pvs = Math.max(pvs, llp * mult);
+    const faixas = (r.faixasA || []).slice().sort((a, b) => {
+      if (a.ate == null) return 1;
+      if (b.ate == null) return -1;
+      return a.ate - b.ate;
+    });
+    let mult = faixas.length ? faixas[faixas.length - 1].mult : 1;
+    for (const f of faixas) {
+      if (f.ate == null) { mult = f.mult; break; }
+      if (llp <= f.ate) { mult = f.mult; break; }
+    }
+    pvs = llp * (parseFloat(mult) || 1);
   }
-  if (pvs < Math.max(llp, custo20)) pvs = Math.max(llp, custo20) * 1.025;
+  if (pvs < pisoBase) pvs = pisoBase * (parseFloat(r.pisoMult) || 1);
   return Math.round(pvs * 100) / 100;
 }
 
@@ -1527,21 +1705,7 @@ function carregarExemplo() {
 }
 
 function calcularPVS(card) {
-  const ml = card.ml || 0;
-  const custo = card.custo || 0;
-  const mlm = custo * 1.30;
-  let pvs = Math.max(ml, mlm);
-  if (card.liquidez === 'A' && ml > 0) {
-    let mult = 1;
-    if (ml <= 1) mult = 3;
-    else if (ml <= 2) mult = 2.5;
-    else if (ml <= 5) mult = 2;
-    else if (ml <= 10) mult = 1.5;
-    else if (ml <= 50) mult = 1.25;
-    const pvsA = ml * mult;
-    pvs = Math.max(pvs, pvsA);
-  }
-  return Math.round(pvs * 100) / 100;
+  return calcPVS(card);
 }
 
 function aplicarFiltros() {
@@ -2136,6 +2300,7 @@ document.querySelectorAll('nav button').forEach(btn => {
 });
 
 document.addEventListener('DOMContentLoaded', async () => {
+  await carregarRegrasPVS();
   await carregarListaClasseA();
   await carregarEstoqueServidor();
   renderPastas();
