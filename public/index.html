@@ -184,6 +184,10 @@
         </div>
         <div style="align-self:end;"><button class="primary small" onclick="transferirSelecionados()">Transferir</button></div>
       </div>
+      <div class="filters" style="margin-top:0.6rem;">
+        <div style="align-self:end;"><button class="secondary small" style="background:#c41e3a;" onclick="excluirSelecionados()">Excluir selecionados</button></div>
+        <div style="align-self:end;"><button class="secondary small" style="background:#c41e3a;" onclick="excluirFiltrados()">Excluir o que está filtrado</button></div>
+      </div>
     </div>
 
     <div class="card">
@@ -1322,12 +1326,48 @@ function criarPasta() {
 
 function excluirPasta(nome) {
   if (nome === 'Geral') { alert('Não é possível excluir a pasta Geral.'); return; }
-  if (!confirm(`Excluir a pasta "${nome}"? Os itens serão movidos para Geral.`)) return;
-  estoque.forEach(c => { if (c.pasta === nome) c.pasta = 'Geral'; });
+  const qtd = estoque.filter(c => (c.pasta || 'Geral') === nome).length;
+  const escolha = prompt(`A pasta "${nome}" tem ${qtd} item(ns).\n\nDigite 1 para mover os itens para Geral.\nDigite 2 para APAGAR os itens junto com a pasta.\n\nCancelar não faz nada.`);
+  if (escolha === '1') {
+    estoque.forEach(c => { if ((c.pasta || 'Geral') === nome) c.pasta = 'Geral'; });
+  } else if (escolha === '2') {
+    if (!confirm(`Apagar de verdade ${qtd} item(ns) da pasta "${nome}"? Não dá para desfazer.`)) return;
+    estoque = estoque.filter(c => (c.pasta || 'Geral') !== nome);
+  } else return;
   pastas = pastas.filter(p => p !== nome);
-  filtered = [...estoque];
+  if (window.pastaAtiva === nome) window.pastaAtiva = '';
   renderPastas();
-  renderEstoque();
+  aplicarFiltros();
+  salvarEstoqueServidor();
+}
+
+function excluirSelecionados() {
+  const marcados = [...document.querySelectorAll('.row-check:checked')].map(cb => filtered[+cb.dataset.i]).filter(Boolean);
+  if (!marcados.length) {
+    alert('Marque pelo menos um item. As caixinhas aparecem na Visão Detalhada.');
+    return;
+  }
+  const amostra = marcados.slice(0, 5).map(c => c.nome).join(', ');
+  if (!confirm(`Excluir ${marcados.length} item(ns)?\n${amostra}${marcados.length > 5 ? '...' : ''}\n\nNão dá para desfazer.`)) return;
+  const apagar = new Set(marcados);
+  estoque = estoque.filter(c => !apagar.has(c));
+  renderPastas();
+  aplicarFiltros();
+  salvarEstoqueServidor();
+}
+
+function excluirFiltrados() {
+  if (!filtered.length) { alert('Não há itens na lista filtrada.'); return; }
+  const tudo = filtered.length === estoque.length;
+  const msg = tudo
+    ? `O filtro está mostrando o estoque inteiro.\n\nApagar TODOS os ${filtered.length} itens? Não dá para desfazer.`
+    : `Apagar os ${filtered.length} itens que estão aparecendo agora (só o filtro atual)? Não dá para desfazer.`;
+  if (!confirm(msg)) return;
+  const apagar = new Set(filtered);
+  estoque = estoque.filter(c => !apagar.has(c));
+  renderPastas();
+  aplicarFiltros();
+  salvarEstoqueServidor();
 }
 
 function renderPastas() {
