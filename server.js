@@ -11,6 +11,7 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Listar estoque
 app.get('/api/estoque', async (req, res) => {
   try {
     const { rows } = await db.query('SELECT * FROM cartas ORDER BY nome');
@@ -20,6 +21,7 @@ app.get('/api/estoque', async (req, res) => {
   }
 });
 
+// Substituir estoque completo (usado em exclusões e sincronização total)
 app.post('/api/estoque/substituir', async (req, res) => {
   const cartas = req.body;
   if (!Array.isArray(cartas)) return res.status(400).json({ error: 'Envie um array de cartas' });
@@ -45,6 +47,7 @@ app.post('/api/estoque/substituir', async (req, res) => {
   }
 });
 
+// Importar / adicionar ao estoque (sem apagar o existente)
 app.post('/api/estoque/importar', async (req, res) => {
   const cartas = req.body;
   if (!Array.isArray(cartas)) return res.status(400).json({ error: 'Envie um array de cartas' });
@@ -69,6 +72,7 @@ app.post('/api/estoque/importar', async (req, res) => {
   }
 });
 
+// Atualizar uma carta
 app.put('/api/estoque/:id', async (req, res) => {
   const { id } = req.params;
   const campos = req.body;
@@ -88,6 +92,7 @@ app.put('/api/estoque/:id', async (req, res) => {
   }
 });
 
+// Atualizar ML de todas as cartas
 app.post('/api/atualizar-ml', async (req, res) => {
   try {
     const { rows } = await db.query('SELECT id, nome FROM cartas');
@@ -106,6 +111,7 @@ app.post('/api/atualizar-ml', async (req, res) => {
   }
 });
 
+// Teste de conexão com o banco
 app.get('/api/status', async (req, res) => {
   const versao = 'pg-v2';
   if (!process.env.DATABASE_URL) {
@@ -142,6 +148,29 @@ app.put('/api/classe-a', async (req, res) => {
       await db.query('INSERT INTO classe_a (nome) VALUES ($1) ON CONFLICT (nome) DO NOTHING', [n]);
     }
     res.json({ ok: true, total: nomes.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/config/:chave', async (req, res) => {
+  try {
+    const { rows } = await db.query('SELECT valor FROM config WHERE chave = $1', [req.params.chave]);
+    if (!rows.length || !rows[0].valor) return res.json(null);
+    res.json(JSON.parse(rows[0].valor));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/config/:chave', async (req, res) => {
+  try {
+    await db.query(
+      `INSERT INTO config (chave, valor) VALUES ($1, $2)
+       ON CONFLICT (chave) DO UPDATE SET valor = EXCLUDED.valor`,
+      [req.params.chave, JSON.stringify(req.body)]
+    );
+    res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
