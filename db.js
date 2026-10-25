@@ -36,6 +36,7 @@ async function init() {
   await pool.query(`ALTER TABLE cartas ADD COLUMN IF NOT EXISTS cor TEXT`);
   await pool.query(`ALTER TABLE cartas ADD COLUMN IF NOT EXISTS raridade TEXT`);
   await pool.query(`CREATE TABLE IF NOT EXISTS classe_a (nome TEXT PRIMARY KEY)`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS config (chave TEXT PRIMARY KEY, valor TEXT)`);
 }
 
 init().catch(err => console.error('Erro ao criar tabela:', err));
