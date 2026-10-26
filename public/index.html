@@ -99,7 +99,7 @@
   <img src="logo.png" alt="Cozinha Offline Store">
   <div>
     <h1>Cozinha Offline Store</h1>
-    <p>Gestão de estoque, pedidos e orçamentos · versão 26/10-4</p>
+    <p>Gestão de estoque, pedidos e orçamentos · versão 26/10-5</p>
   </div>
 </header>
 <nav>
@@ -444,6 +444,7 @@
 
 <script>
 const { jsPDF } = window.jspdf;
+let estoque = [];
 async function carregarEstoqueServidor() {
   try {
     const r = await fetch('/api/estoque');
