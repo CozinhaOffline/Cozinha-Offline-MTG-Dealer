@@ -99,7 +99,7 @@
   <img src="logo.png" alt="Cozinha Offline Store">
   <div>
     <h1>Cozinha Offline Store</h1>
-    <p>Gestão de estoque, pedidos e orçamentos · versão 26/10-2</p>
+    <p>Gestão de estoque, pedidos e orçamentos · versão 26/10-3</p>
   </div>
 </header>
 <nav>
@@ -482,7 +482,6 @@ async function carregarEstoqueServidor() {
       Object.keys(pastasMeta).forEach(n => { if (n && !pastas.includes(n)) pastas.push(n); });
       renderPastas();
       aplicarFiltros();
-      if (mudou) salvarEstoqueServidor();
     }
   } catch (e) {
     console.log('Sem conexão com servidor ou estoque vazio');
@@ -492,12 +491,12 @@ async function carregarEstoqueServidor() {
 let filaSalvar = Promise.resolve();
 let pastasMeta = {};
 
-async function salvarEstoqueServidor() {
-  filaSalvar = filaSalvar.catch(() => {}).then(enviarEstoqueAtual);
+async function salvarEstoqueServidor(forcar) {
+  filaSalvar = filaSalvar.catch(() => {}).then(() => enviarEstoqueAtual(!!forcar));
   return filaSalvar;
 }
 
-async function enviarEstoqueAtual() {
+async function enviarEstoqueAtual(forcar) {
   try {
   const payload = estoque.map(c => ({
     nome: c.nome,
@@ -527,9 +526,14 @@ async function enviarEstoqueAtual() {
   }));
   const resp = await fetch('/api/estoque/substituir', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: Object.assign({ 'Content-Type': 'application/json' }, forcar ? { 'x-forcar': 'sim' } : {}),
     body: JSON.stringify(payload)
   });
+  if (resp.status === 409) {
+    const info = await resp.json().catch(() => ({}));
+    alert(info.error || 'A gravação foi bloqueada para não apagar cartas. Recarregue a página com Ctrl+F5 antes de continuar.');
+    return;
+  }
   if (!resp.ok) {
     const txt = await resp.text();
     alert('Não consegui salvar o estoque no banco. ' + txt.slice(0, 180));
@@ -1227,11 +1231,6 @@ async function carregarListaClasseA() {
       body: JSON.stringify(linhas)
     }).catch(() => {});
   }
-  if (estoque.length) {
-    const mudou = aplicarClasseANoEstoque();
-    aplicarFiltros();
-    if (mudou) salvarEstoqueServidor();
-  }
 }
 
 async function salvarListaClasseA() {
@@ -1612,7 +1611,7 @@ function excluirPasta(i) {
   if (window.pastaAtiva === nome) window.pastaAtiva = '';
   renderPastas();
   aplicarFiltros();
-  salvarEstoqueServidor();
+  salvarEstoqueServidor(true);
 }
 
 function excluirSelecionados() {
@@ -1627,7 +1626,7 @@ function excluirSelecionados() {
   estoque = estoque.filter(c => !apagar.has(c));
   renderPastas();
   aplicarFiltros();
-  salvarEstoqueServidor();
+  salvarEstoqueServidor(true);
 }
 
 function excluirFiltrados() {
@@ -1641,7 +1640,7 @@ function excluirFiltrados() {
   estoque = estoque.filter(c => !apagar.has(c));
   renderPastas();
   aplicarFiltros();
-  salvarEstoqueServidor();
+  salvarEstoqueServidor(true);
 }
 
 function renderPastas() {
@@ -1954,9 +1953,9 @@ function limparEstoque() {
   renderEstoque();
   fetch('/api/estoque/substituir', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'x-forcar': 'sim' },
     body: JSON.stringify([])
-  }).catch(() => {});
+  }).then(r => { if (!r.ok) alert('Não consegui limpar o banco.'); }).catch(() => alert('Não consegui limpar o banco.'));
   alert('Estoque limpo.');
 }
 
