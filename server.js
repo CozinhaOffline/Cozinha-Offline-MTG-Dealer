@@ -21,14 +21,27 @@ app.get('/api/estoque', async (req, res) => {
   }
 });
 
+function numero(v, fallback) {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : fallback;
+  if (v == null || v === '') return fallback;
+  let s = String(v).trim().replace(/[R$\s%]/g, '');
+  if (!s) return fallback;
+  if (s.includes(',') && s.includes('.')) {
+    if (s.lastIndexOf(',') > s.lastIndexOf('.')) s = s.replace(/\./g, '').replace(',', '.');
+    else s = s.replace(/,/g, '');
+  } else if (s.includes(',')) s = s.replace(',', '.');
+  const n = parseFloat(s);
+  return Number.isFinite(n) ? n : fallback;
+}
+
 function valoresCarta(c) {
-  const qtd = c.qtd == null || c.qtd === '' ? 1 : parseInt(c.qtd, 10);
+  const qtd = Math.max(0, Math.round(numero(c.qtd, 1)));
   return [
-    c.nome || 'Sem nome', c.nomePt || '', Number.isFinite(qtd) ? qtd : 1,
+    c.nome || 'Sem nome', c.nomePt || '', qtd,
     c.set || '', c.setCode || '', c.scryfallId || '',
     c.cond || 'NM', c.lang || 'EN', c.extras || '', c.foil ? 1 : 0,
-    c.pasta || 'Geral', c.ml || 0, c.custo || 0, c.pvs || 0, c.liquidez || 'C',
-    c.codigo || '', c.desconto || 0, c.obs || '', c.operacao || '', c.depara || '', c.data || '',
+    c.pasta || 'Geral', numero(c.ml, 0), numero(c.custo, 0), numero(c.pvs, 0), c.liquidez || 'C',
+    c.codigo || '', numero(c.desconto, 0), c.obs || '', c.operacao || '', c.depara || '', c.data || '',
     c.cor || '', c.raridade || '', c.pvsManual ? 1 : 0
   ];
 }
@@ -144,7 +157,7 @@ app.post('/api/atualizar-ml', async (req, res) => {
 
 // Teste de conexão com o banco
 app.get('/api/status', async (req, res) => {
-  const versao = 'pg-v3-seguro';
+  const versao = 'pg-v4';
   if (!process.env.DATABASE_URL) {
     return res.json({ ok: false, versao, banco: 'falhou', erro: 'DATABASE_URL nao esta configurada no Render' });
   }
