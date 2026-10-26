@@ -215,6 +215,18 @@
         <div><label>Nova pasta</label><input type="text" id="novaPasta" placeholder="Nome da pasta"></div>
         <div style="align-self:end;"><button class="primary small" onclick="criarPasta()">Criar pasta</button></div>
       </div>
+      <div class="filters" style="margin-top:0.6rem;">
+        <div><label>Calcular custo por</label>
+          <select id="custoAlvoTipo" onchange="alternarAlvoCusto()">
+            <option value="pasta">Pasta</option>
+            <option value="codigo">Código</option>
+          </select>
+        </div>
+        <div id="custoBoxPasta"><label>Pasta</label><select id="custoAlvoPasta"></select></div>
+        <div id="custoBoxCodigo" style="display:none;"><label>Código</label><input type="text" id="custoAlvoCodigo" placeholder="Código"></div>
+        <div><label>Valor pago (R$)</label><input type="text" id="custoPagoDash" placeholder="0,00"></div>
+        <div style="align-self:end;"><button class="primary small" onclick="calcularCustoDashboard()">Aplicar custo</button></div>
+      </div>
       <div id="listaPastas" style="margin-top:0.8rem;display:flex;flex-wrap:wrap;"></div>
     </div>
 
@@ -251,6 +263,9 @@
             <option value="depara">De/Para</option>
             <option value="obs">OBS</option>
             <option value="liquidez">Liquidez</option>
+            <option value="cond">Estado</option>
+            <option value="lang">Idioma</option>
+            <option value="extras">Extras</option>
           </select>
         </div>
         <div><label>Valor</label><input type="text" id="bulkValueModal" placeholder="-20 ou 30"></div>
@@ -262,6 +277,10 @@
           </select>
         </div>
         <div style="align-self:end;"><button class="primary small" onclick="aplicarBulkModal()">Aplicar</button></div>
+      </div>
+      <div class="filters" style="margin-bottom:0.8rem;">
+        <div><label>Valor pago pelo lote (R$)</label><input type="text" id="impPago" placeholder="0,00"></div>
+        <div style="align-self:end;"><button class="secondary small" onclick="calcularCustoImportacao()">Calcular custo</button></div>
       </div>
       <div id="modalTableContainer" style="max-height:50vh;overflow:auto;border:1px solid var(--borda);border-radius:8px;"></div>
       <div style="margin-top:1rem;display:flex;gap:0.8rem;justify-content:flex-end;">
@@ -423,6 +442,7 @@ async function carregarEstoqueServidor() {
       filtered = [...estoque];
       pastas = [...new Set(estoque.map(c => c.pasta || 'Geral'))];
       if (!pastas.includes('Geral')) pastas.unshift('Geral');
+      Object.keys(pastasMeta).forEach(n => { if (n && !pastas.includes(n)) pastas.push(n); });
       renderPastas();
       aplicarFiltros();
       if (mudou) salvarEstoqueServidor();
@@ -432,40 +452,53 @@ async function carregarEstoqueServidor() {
   }
 }
 
+let filaSalvar = Promise.resolve();
+let pastasMeta = {};
+
 async function salvarEstoqueServidor() {
+  filaSalvar = filaSalvar.catch(() => {}).then(enviarEstoqueAtual);
+  return filaSalvar;
+}
+
+async function enviarEstoqueAtual() {
   try {
-    const payload = estoque.map(c => ({
-      nome: c.nome,
-      nomePt: c.nomePt || '',
-      qtd: c.qtd,
-      set: c.set,
-      setCode: c.setCode,
-      scryfallId: c.scryfallId,
-      cond: c.cond,
-      lang: c.lang,
-      extras: c.extras,
-      foil: c.foil,
-      pasta: c.pasta,
-      ml: c.ml,
-      custo: c.custo,
-      pvs: c.pvs,
-      liquidez: c.liquidez,
-      codigo: c.codigo,
-      desconto: c.desconto,
-      obs: c.obs,
-      operacao: c.operacao,
-      depara: c.depara,
-      data: c.data,
-      cor: c.cor || '',
-      raridade: c.raridade || ''
-    }));
-    await fetch('/api/estoque/substituir', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
+  const payload = estoque.map(c => ({
+    nome: c.nome,
+    nomePt: c.nomePt || '',
+    qtd: c.qtd,
+    set: c.set,
+    setCode: c.setCode,
+    scryfallId: c.scryfallId,
+    cond: c.cond,
+    lang: c.lang,
+    extras: c.extras,
+    foil: c.foil,
+    pasta: c.pasta,
+    ml: c.ml,
+    custo: c.custo,
+    pvs: c.pvs,
+    pvsManual: !!c.pvsManual,
+    liquidez: c.liquidez,
+    codigo: c.codigo,
+    desconto: c.desconto,
+    obs: c.obs,
+    operacao: c.operacao,
+    depara: c.depara,
+    data: c.data,
+    cor: c.cor || '',
+    raridade: c.raridade || ''
+  }));
+  const resp = await fetch('/api/estoque/substituir', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  if (!resp.ok) {
+    const txt = await resp.text();
+    alert('Não consegui salvar o estoque no banco. ' + txt.slice(0, 180));
+  }
   } catch (e) {
-    console.error('Erro ao salvar estoque', e);
+    alert('Não consegui salvar o estoque: ' + (e.message || e));
   }
 }
 let filtered = [];
@@ -1335,7 +1368,7 @@ async function salvarRegrasPVS(recalcular) {
     body: JSON.stringify(regrasPVS)
   }).catch(() => {});
   if (recalcular && estoque.length) {
-    estoque.forEach(aplicarCalculos);
+    estoque.forEach(c => { c.pvsManual = false; aplicarCalculos(c); });
     aplicarFiltros();
     salvarEstoqueServidor();
   }
@@ -1379,7 +1412,7 @@ function calcPVS(card) {
 function aplicarCalculos(card) {
   card.desconto = parsePct(card.desconto);
   card.custo = calcCusto(card.ml, card.desconto);
-  card.pvs = calcPVS(card);
+  if (!card.pvsManual) card.pvs = calcPVS(card);
   if (!card.data) card.data = new Date().toISOString().slice(0, 16).replace('T', ' ');
 }
 
@@ -1502,8 +1535,9 @@ function criarPasta() {
   renderPastas();
 }
 
-function excluirPasta(nome) {
-  if (nome === 'Geral') { alert('Não é possível excluir a pasta Geral.'); return; }
+function excluirPasta(i) {
+  const nome = typeof i === 'number' ? pastas[i] : i;
+  if (!nome || nome === 'Geral') { alert('Não é possível excluir a pasta Geral.'); return; }
   const qtd = estoque.filter(c => (c.pasta || 'Geral') === nome).length;
   const escolha = prompt(`A pasta "${nome}" tem ${qtd} item(ns).\n\nDigite 1 para mover os itens para Geral.\nDigite 2 para APAGAR os itens junto com a pasta.\n\nCancelar não faz nada.`);
   if (escolha === '1') {
@@ -1551,17 +1585,39 @@ function excluirFiltrados() {
 function renderPastas() {
   const el = document.getElementById('listaPastas');
   if (!el) return;
-  el.innerHTML = pastas.map(p => {
-    const qtd = estoque.filter(c => (c.pasta || 'Geral') === p).reduce((s, c) => s + (c.qtd || 0), 0);
+  const selCusto = document.getElementById('custoAlvoPasta');
+  if (selCusto) {
+    const atual = selCusto.value;
+    selCusto.innerHTML = pastas.map(p => `<option value="${esc(p)}">${esc(p)}</option>`).join('');
+    if (atual) selCusto.value = atual;
+  }
+  el.innerHTML = pastas.map((p, i) => {
+    const itens = estoque.filter(c => (c.pasta || 'Geral') === p);
+    const qtd = itens.reduce((s, c) => s + (parseFloat(c.qtd) || 0), 0);
+    const llp = itens.reduce((s, c) => s + (parseFloat(c.ml) || 0) * (parseFloat(c.qtd) || 0), 0);
+    const pvs = itens.reduce((s, c) => s + (parseFloat(c.pvs) || 0) * (parseFloat(c.qtd) || 0), 0);
     const active = window.pastaAtiva === p ? 'border:2px solid var(--vermelho);' : 'border:1px solid var(--borda);';
-    return `<div onclick="filtrarPorPasta('${p}')" style="display:inline-block;width:180px;margin:0.4rem;padding:1rem;background:#f8fafc;border-radius:10px;cursor:pointer;${active}">
-      <div style="font-weight:600;color:var(--azul);">${p}</div>
+    const img = pastasMeta[p] && pastasMeta[p].imagem;
+    const bg = img
+      ? `background-image:linear-gradient(rgba(248,250,252,0.8),rgba(248,250,252,0.8)),url('${img}');background-size:cover;background-position:center;`
+      : 'background:#f8fafc;';
+    return `<div onclick="filtrarPorPasta(${i})" style="display:inline-block;width:200px;margin:0.4rem;padding:1rem;border-radius:10px;cursor:pointer;${active}${bg}">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:0.4rem;">
+        <div style="font-weight:600;color:var(--azul);">${esc(p)}</div>
+        <button class="secondary small" title="Editar pasta" onclick="event.stopPropagation();editarPasta(${i})">Editar</button>
+      </div>
       <div class="muted">${qtd} cartas</div>
-      ${p !== 'Geral' ? `<button class="secondary small" style="background:#c41e3a;margin-top:0.4rem;" onclick="event.stopPropagation();excluirPasta('${p}')">Excluir</button>` : ''}
+      <div class="muted">LLP ${formatMoney(llp)}</div>
+      <div class="muted">PVS ${formatMoney(pvs)}</div>
+      ${p !== 'Geral' ? `<button class="secondary small" style="background:#c41e3a;margin-top:0.4rem;" onclick="event.stopPropagation();excluirPasta(${i})">Excluir</button>` : ''}
     </div>`;
   }).join('');
   const sel = document.getElementById('transferPasta');
-  if (sel) sel.innerHTML = '<option value="">Escolha a pasta...</option>' + pastas.map(p => `<option value="${p}">${p}</option>`).join('');
+  if (sel) sel.innerHTML = '<option value="">Escolha a pasta...</option>' + pastas.map(p => `<option value="${esc(p)}">${esc(p)}</option>`).join('');
+}
+
+function esc(s) {
+  return String(s ?? '').replace(/&/g,'&').replace(/</g,'<').replace(/"/g,'"');
 }
 
 function transferirSelecionados() {
@@ -1580,13 +1636,164 @@ function transferirSelecionados() {
   if (count === 0) { alert('Marque pelo menos um item.'); return; }
   renderPastas();
   renderEstoque();
-  alert(`${count} item(ns) transferido(s) para "${destino}".`);
+  salvarEstoqueServidor();
+  alert(count + ' item(ns) transferido(s).');
 }
 
 function filtrarPorPasta(nome) {
+  if (typeof nome === 'number') nome = pastas[nome];
   window.pastaAtiva = nome;
   renderPastas();
   aplicarFiltros();
+}
+
+function alternarAlvoCusto() {
+  const tipo = document.getElementById('custoAlvoTipo').value;
+  document.getElementById('custoBoxPasta').style.display = tipo === 'pasta' ? '' : 'none';
+  document.getElementById('custoBoxCodigo').style.display = tipo === 'codigo' ? '' : 'none';
+}
+
+function aplicarCustoGrupo(cartas, pago) {
+  const soma = cartas.reduce((s, c) => s + (parseFloat(c.ml) || 0) * (parseFloat(c.qtd) || 0), 0);
+  if (soma <= 0) { alert('A soma do LLP deste grupo é zero. Não dá para achar o percentual.'); return null; }
+  const pct = (pago / soma - 1) * 100;
+  const pctRound = Math.round(pct * 100) / 100;
+  cartas.forEach(c => {
+    c.desconto = pctRound;
+    c.pvsManual = false;
+    aplicarCalculos(c);
+  });
+  return pctRound;
+}
+
+function calcularCustoImportacao() {
+  const pago = parseMoney(document.getElementById('impPago').value);
+  if (pago <= 0) { alert('Informe o valor pago pelo lote.'); return; }
+  const pct = aplicarCustoGrupo(pendingImport, pago);
+  if (pct == null) return;
+  renderModalRows();
+  alert('Percentual aplicado em relação ao LLP: ' + pct.toFixed(2).replace('.', ',') + '%');
+}
+
+function calcularCustoDashboard() {
+  const pago = parseMoney(document.getElementById('custoPagoDash').value);
+  if (pago <= 0) { alert('Informe o valor pago.'); return; }
+  const tipo = document.getElementById('custoAlvoTipo').value;
+  let cartas = [];
+  if (tipo === 'codigo') {
+    const cod = (document.getElementById('custoAlvoCodigo').value || '').trim().toLowerCase();
+    if (!cod) { alert('Informe o código.'); return; }
+    cartas = estoque.filter(c => String(c.codigo || '').toLowerCase() === cod);
+  } else {
+    const pasta = document.getElementById('custoAlvoPasta').value;
+    cartas = estoque.filter(c => (c.pasta || 'Geral') === pasta);
+  }
+  if (!cartas.length) { alert('Nenhum item encontrado nesse grupo.'); return; }
+  const pct = aplicarCustoGrupo(cartas, pago);
+  if (pct == null) return;
+  renderPastas();
+  aplicarFiltros();
+  salvarEstoqueServidor();
+  alert('Custo aplicado em ' + cartas.length + ' itens. Percentual: ' + pct.toFixed(2).replace('.', ',') + '%');
+}
+
+async function salvarPastasMeta() {
+  localStorage.setItem('pastasMeta', JSON.stringify(pastasMeta));
+  fetch('/api/config/pastas-meta', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(pastasMeta)
+  }).catch(() => {});
+}
+
+async function carregarPastasMeta() {
+  try {
+    const local = localStorage.getItem('pastasMeta');
+    if (local) pastasMeta = JSON.parse(local) || {};
+  } catch (e) {}
+  try {
+    const r = await fetch('/api/config/pastas-meta');
+    if (r.ok) {
+      const data = await r.json();
+      if (data && typeof data === 'object' && !Array.isArray(data)) {
+        pastasMeta = data;
+        localStorage.setItem('pastasMeta', JSON.stringify(pastasMeta));
+      }
+    }
+  } catch (e) {}
+  Object.keys(pastasMeta).forEach(n => { if (n && !pastas.includes(n)) pastas.push(n); });
+}
+
+function editarPasta(i) {
+  const nome = pastas[i];
+  if (!nome) return;
+  let modal = document.getElementById('modalPasta');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'modalPasta';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:4000;';
+    modal.innerHTML = `<div style="background:white;margin:10vh auto;max-width:420px;border-radius:12px;padding:1.2rem;">
+      <h3>Editar pasta</h3>
+      <label>Nome</label><input type="text" id="editPastaNome">
+      <label>Imagem de fundo</label><input type="file" id="editPastaImg" accept="image/*">
+      <p class="muted">A imagem fica com 20% de visibilidade para o texto continuar legível.</p>
+      <div style="margin-top:0.8rem;">
+        <button class="primary" id="editPastaSalvar">Salvar</button>
+        <button class="secondary" id="editPastaFechar">Cancelar</button>
+        <button class="secondary" id="editPastaLimpar" style="background:#c41e3a;">Tirar imagem</button>
+      </div>
+    </div>`;
+    document.body.appendChild(modal);
+  }
+  modal.style.display = 'block';
+  document.getElementById('editPastaNome').value = nome;
+  document.getElementById('editPastaImg').value = '';
+  document.getElementById('editPastaFechar').onclick = () => { modal.style.display = 'none'; };
+  document.getElementById('editPastaLimpar').onclick = () => {
+    if (pastasMeta[nome]) delete pastasMeta[nome].imagem;
+    salvarPastasMeta();
+    renderPastas();
+    modal.style.display = 'none';
+  };
+  document.getElementById('editPastaSalvar').onclick = () => {
+    const novo = document.getElementById('editPastaNome').value.trim();
+    if (!novo) { alert('Informe o nome.'); return; }
+    const file = document.getElementById('editPastaImg').files[0];
+    const aplicar = (imagem) => {
+      const meta = pastasMeta[nome] || {};
+      if (imagem !== undefined) meta.imagem = imagem;
+      if (novo !== nome) {
+        estoque.forEach(c => { if ((c.pasta || 'Geral') === nome) c.pasta = novo; });
+        pastas[i] = novo;
+        if (window.pastaAtiva === nome) window.pastaAtiva = novo;
+        delete pastasMeta[nome];
+        if (meta.imagem) pastasMeta[novo] = meta;
+        salvarEstoqueServidor();
+      } else if (meta.imagem) {
+        pastasMeta[nome] = meta;
+      }
+      salvarPastasMeta();
+      renderPastas();
+      aplicarFiltros();
+      modal.style.display = 'none';
+    };
+    if (!file) { aplicar(pastasMeta[nome] && pastasMeta[nome].imagem); return; }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const max = 800;
+        let w = img.width, h = img.height;
+        if (w > max) { h = Math.round(h * max / w); w = max; }
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        aplicar(canvas.toDataURL('image/jpeg', 0.72));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  };
 }
 
 function escolherPasta(callback) {
@@ -1848,10 +2055,13 @@ function renderEstoque() {
       filtered[i][k] = v;
       const orig = estoque.findIndex(x => x === filtered[i]);
       if (orig >= 0) estoque[orig][k] = v;
+      if (k === 'pvs') filtered[i].pvsManual = true;
       if (k === 'desconto' || k === 'ml' || k === 'liquidez') {
+        filtered[i].pvsManual = false;
         aplicarCalculos(filtered[i]);
         renderEstoque();
       }
+      salvarEstoqueServidor();
     };
   });
 }
@@ -1911,6 +2121,7 @@ function aplicarBulk() {
   const target = document.getElementById('bulkTarget')?.value || 'selecionadas';
   if (val === '') { alert('Informe o valor.'); return; }
   if (field === 'desconto') val = parsePct(val);
+  else if (field === 'pvs' || field === 'ml' || field === 'custo') val = parseMoney(val);
   else if (['qtd'].includes(field)) val = parseInt(val) || 1;
   let count = 0;
   filtered.forEach((c, i) => {
@@ -1919,31 +2130,32 @@ function aplicarBulk() {
     const selected = cb?.checked;
     if (target === 'todos' || (target === 'vazias' && isEmpty) || (target === 'selecionadas' && selected)) {
       c[field] = val;
-      if (field === 'desconto' || field === 'liquidez' || field === 'ml') aplicarCalculos(c);
+      if (field === 'pvs') c.pvsManual = true;
+      if (field === 'desconto' || field === 'liquidez' || field === 'ml') {
+        c.pvsManual = false;
+        aplicarCalculos(c);
+      }
       const oi = estoque.indexOf(c);
       if (oi >= 0) estoque[oi] = c;
       count++;
     }
   });
   renderEstoque();
-  alert(`Aplicado em ${count} linhas.`);
+  salvarEstoqueServidor();
+  alert(`Aplicado em ${count} linhas. A alteração foi gravada.`);
 }
 
 function calcularCustoLote() {
-  const pago = parseFloat(document.getElementById('lotePago').value) || 0;
+  const pago = parseMoney(document.getElementById('lotePago').value);
   const pasta = (document.getElementById('lotePasta').value || '').trim().toLowerCase();
   if (pago <= 0) { alert('Informe o valor pago.'); return; }
   let cartas = estoque;
   if (pasta) cartas = estoque.filter(c => (c.pasta || '').toLowerCase().includes(pasta));
-  const somaML = cartas.reduce((s, c) => s + (c.ml * c.qtd), 0);
-  if (somaML <= 0) { alert('Defina o ML das cartas do lote primeiro.'); return; }
-  const fator = pago / somaML;
-  cartas.forEach(c => {
-    c.custo = Math.round(c.ml * fator * 100) / 100;
-    c.pvs = calcularPVS(c);
-  });
+  const pct = aplicarCustoGrupo(cartas, pago);
+  if (pct == null) return;
   aplicarFiltros();
-  document.getElementById('custoResultado').innerHTML = `<div class="alert">Soma ML: R$ ${somaML.toFixed(2)} | Fator: ${(fator*100).toFixed(1)}% | Atualizado em ${cartas.length} cartas.</div>`;
+  salvarEstoqueServidor();
+  document.getElementById('custoResultado').innerHTML = `<div class="alert">Percentual sobre o LLP: ${pct.toFixed(2).replace('.', ',')}% | Atualizado em ${cartas.length} cartas.</div>`;
 }
 
 // Orçamento e Avaliador (versões simplificadas mantidas)
@@ -2084,6 +2296,76 @@ let orcamentosSalvos = JSON.parse(localStorage.getItem('orcamentosSalvos') || '[
 let pedidoAtual = null;
 let seqSaida = parseInt(localStorage.getItem('seqSaida') || '0');
 
+function limparPedido(p) {
+  return {
+    cliente: p.cliente || '',
+    titulo: p.titulo || '',
+    total: p.total || 0,
+    data: p.data || '',
+    codigo: p.codigo || null,
+    lista: p.lista || '',
+    itens: (p.itens || []).map(i => ({
+      qtd: i.qtd, nome: i.nome, set: i.set, lang: i.lang, cond: i.cond,
+      extras: i.extras, preco: i.preco, total: i.total, encontrado: !!i.encontrado,
+      pasta: i.pasta || '-'
+    }))
+  };
+}
+
+async function salvarConfig(chave, valor) {
+  try {
+    localStorage.setItem('cfg_' + chave, JSON.stringify(valor));
+  } catch (e) {}
+  try {
+    await fetch('/api/config/' + chave, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(valor)
+    });
+  } catch (e) {}
+}
+
+async function lerConfig(chave) {
+  try {
+    const r = await fetch('/api/config/' + chave);
+    if (r.ok) {
+      const data = await r.json();
+      if (data !== null && data !== undefined && !(typeof data === 'object' && data.error)) return data;
+    }
+  } catch (e) {}
+  try {
+    const local = localStorage.getItem('cfg_' + chave);
+    if (local) return JSON.parse(local);
+  } catch (e) {}
+  return null;
+}
+
+function salvarOrcamentos() {
+  const limpos = orcamentosSalvos.map(limparPedido);
+  orcamentosSalvos = limpos;
+  try { localStorage.setItem('orcamentosSalvos', JSON.stringify(limpos)); } catch (e) {}
+  salvarConfig('orcamentos', limpos);
+}
+
+function salvarSaidas() {
+  const limpos = pedidosHistorico.map(limparPedido);
+  pedidosHistorico = limpos;
+  try { localStorage.setItem('pedidosHistorico', JSON.stringify(limpos)); } catch (e) {}
+  salvarConfig('saidas', limpos);
+}
+
+async function carregarRegistros() {
+  const o = await lerConfig('orcamentos');
+  const s = await lerConfig('saidas');
+  const q = await lerConfig('seqSaida');
+  if (Array.isArray(o)) orcamentosSalvos = o;
+  else if (orcamentosSalvos.length) salvarOrcamentos();
+  if (Array.isArray(s)) pedidosHistorico = s;
+  else if (pedidosHistorico.length) salvarSaidas();
+  if (typeof q === 'number') seqSaida = q;
+  else if (seqSaida) salvarConfig('seqSaida', seqSaida);
+}
+
 function cruzarPedido() {
   const texto = document.getElementById('pedLista').value.trim();
   if (!texto) { alert('Cole a lista do cliente.'); return; }
@@ -2118,20 +2400,24 @@ function cruzarPedido() {
 
 function renderPedidoTabela() {
   if (!pedidoAtual) return;
-  let html = '<table><thead><tr><th>Qtd</th><th>Nome</th><th>Edição</th><th>Pasta</th><th>Idioma</th><th>Estado</th><th>Unit.</th><th>Total</th><th></th></tr></thead><tbody>';
+  let html = `<div class="row" style="margin-bottom:0.8rem;">
+      <div class="col"><label>Cliente</label><input type="text" value="${esc(pedidoAtual.cliente || '')}" onchange="pedidoAtual.cliente=this.value;var c=document.getElementById('pedCliente');if(c)c.value=this.value;"></div>
+      <div class="col"><label>Título</label><input type="text" value="${esc(pedidoAtual.titulo || '')}" onchange="pedidoAtual.titulo=this.value;var c=document.getElementById('pedTitulo');if(c)c.value=this.value;"></div>
+    </div>`;
+  html += '<table><thead><tr><th>Qtd</th><th>Nome</th><th>Edição</th><th>Pasta</th><th>Idioma</th><th>Estado</th><th>Preço</th><th>Total</th><th></th></tr></thead><tbody>';
   pedidoAtual.itens.forEach((it, i) => {
     if (!it.encontrado) {
-      html += `<tr><td>${it.qtd}</td><td colspan="7" style="color:#c41e3a">${it.nome} — não encontrado</td><td><button class="secondary small" style="background:#c41e3a;" onclick="removerItemPedido(${i})">×</button></td></tr>`;
+      html += `<tr><td><input class="edit-input" value="${it.qtd || 1}" onchange="editarItemPedido(${i},'qtd',this.value)"></td><td colspan="6" style="color:#c41e3a">${esc(it.nome)} — não encontrado</td><td></td><td><button class="secondary small" style="background:#c41e3a;" onclick="removerItemPedido(${i})">×</button></td></tr>`;
     } else {
-      const alts = (it.alternativas || []).map((a, ai) => `<option value="${ai}" ${a === it.cardRef ? 'selected' : ''}>${a.set || '-'} (${a.pasta || 'Geral'}) - ${formatMoney(a.pvs)}</option>`).join('');
+      const alts = (it.alternativas || []).map((a, ai) => `<option value="${ai}" ${a === it.cardRef ? 'selected' : ''}>${esc(a.set || '-')} (${esc(a.pasta || 'Geral')})</option>`).join('');
       html += `<tr>
-        <td>${it.qtd}</td>
-        <td>${it.nome}</td>
+        <td><input class="edit-input" value="${it.qtd}" onchange="editarItemPedido(${i},'qtd',this.value)"></td>
+        <td>${esc(it.nome)}</td>
         <td><select onchange="trocarVersao(${i}, this.value)">${alts}</select></td>
-        <td>${it.pasta || '-'}</td>
-        <td>${it.lang}</td>
-        <td>${it.cond}</td>
-        <td>${formatMoney(it.preco)}</td>
+        <td>${esc(it.pasta || '-')}</td>
+        <td><input class="edit-input" value="${esc(it.lang || '')}" onchange="editarItemPedido(${i},'lang',this.value)"></td>
+        <td><input class="edit-input" value="${esc(it.cond || '')}" onchange="editarItemPedido(${i},'cond',this.value)"></td>
+        <td><input class="edit-input" value="${formatMoney(it.preco)}" onchange="editarItemPedido(${i},'preco',this.value)"></td>
         <td>${formatMoney(it.total)}</td>
         <td><button class="secondary small" style="background:#c41e3a;" onclick="removerItemPedido(${i})">×</button></td>
       </tr>`;
@@ -2139,10 +2425,67 @@ function renderPedidoTabela() {
   });
   html += `</tbody></table>
     <div style="margin-top:1rem;font-size:1.15rem;font-weight:bold;">Total: ${formatMoney(pedidoAtual.total)}</div>
+    <h3 style="margin-top:1rem;">Adicionar itens</h3>
+    <div class="filters">
+      <div><label>Nome</label><input type="text" id="addItemNome" placeholder="Nome em inglês"></div>
+      <div><label>Qtd</label><input type="number" id="addItemQtd" value="1" min="1"></div>
+      <div style="align-self:end;"><button class="secondary small" onclick="adicionarItemPedidoManual()">Adicionar</button></div>
+    </div>
+    <label>Ou cole mais uma lista</label>
+    <textarea id="addItemLista" placeholder="1 Sol Ring"></textarea>
+    <button class="secondary small" onclick="adicionarListaPedido()">Incluir lista</button>
     <button class="secondary" style="margin-top:0.6rem;" onclick="imprimirOrcamento()">Imprimir Orçamento</button>`;
   document.getElementById('pedResultado').innerHTML = html;
   document.getElementById('pedResultado').style.display = 'block';
   document.getElementById('btnBaixa').style.display = 'inline-block';
+}
+
+function totalizarPedido() {
+  pedidoAtual.total = pedidoAtual.itens.reduce((s, x) => s + (x.encontrado ? (parseFloat(x.total) || 0) : 0), 0);
+}
+
+function editarItemPedido(i, campo, valor) {
+  const it = pedidoAtual.itens[i];
+  if (!it) return;
+  if (campo === 'qtd') it.qtd = parseInt(valor) || 1;
+  else if (campo === 'preco') it.preco = parseMoney(valor);
+  else it[campo] = valor;
+  it.total = (parseFloat(it.qtd) || 0) * (parseFloat(it.preco) || 0);
+  totalizarPedido();
+  renderPedidoTabela();
+}
+
+function itemDeCarta(nome, qtdPedida) {
+  const matches = estoque.filter(c => c.nome.toLowerCase().includes(nome.toLowerCase()) && c.qtd > 0);
+  if (!matches.length) return { nome, qtd: qtdPedida, encontrado: false, pasta: '-' };
+  matches.sort((a, b) => b.pvs - a.pvs);
+  const card = matches[0];
+  const qtd = Math.min(qtdPedida, card.qtd);
+  return { qtd, nome: card.nome, set: card.set, lang: card.lang, cond: card.cond, extras: card.extras, preco: card.pvs, total: qtd * card.pvs, encontrado: true, pasta: card.pasta || 'Geral', cardRef: card, alternativas: matches };
+}
+
+function adicionarItemPedidoManual() {
+  if (!pedidoAtual) { alert('Gere um orçamento primeiro.'); return; }
+  const nome = (document.getElementById('addItemNome').value || '').trim();
+  const qtd = parseInt(document.getElementById('addItemQtd').value) || 1;
+  if (!nome) { alert('Informe o nome.'); return; }
+  pedidoAtual.itens.push(itemDeCarta(nome, qtd));
+  totalizarPedido();
+  renderPedidoTabela();
+}
+
+function adicionarListaPedido() {
+  if (!pedidoAtual) { alert('Gere um orçamento primeiro.'); return; }
+  const texto = (document.getElementById('addItemLista').value || '').trim();
+  if (!texto) { alert('Cole a lista.'); return; }
+  texto.split('\n').map(l => l.trim()).filter(Boolean).forEach(linha => {
+    const m = linha.match(/^(\d+)\s+(.+)$/);
+    const qtd = m ? parseInt(m[1]) : 1;
+    const nome = (m ? m[2] : linha).trim();
+    pedidoAtual.itens.push(itemDeCarta(nome, qtd));
+  });
+  totalizarPedido();
+  renderPedidoTabela();
 }
 
 function trocarVersao(idx, altIdx) {
@@ -2182,8 +2525,8 @@ function imprimirOrcamento() {
   w.document.close();
   w.print();
 
-  orcamentosSalvos.unshift({ ...pedidoAtual, lista: document.getElementById('pedLista').value });
-  localStorage.setItem('orcamentosSalvos', JSON.stringify(orcamentosSalvos));
+  orcamentosSalvos.unshift(limparPedido(Object.assign({}, pedidoAtual, { lista: document.getElementById('pedLista').value })));
+  salvarOrcamentos();
   document.getElementById('pedLista').value = '';
   document.getElementById('pedResultado').style.display = 'none';
   document.getElementById('btnBaixa').style.display = 'none';
@@ -2209,12 +2552,19 @@ function renderOrcamentosSalvos() {
 
 function reabrirOrcamento(i) {
   const o = orcamentosSalvos[i];
-  document.getElementById('pedCliente').value = o.cliente;
-  document.getElementById('pedTitulo').value = o.titulo;
+  document.getElementById('pedCliente').value = o.cliente || '';
+  document.getElementById('pedTitulo').value = o.titulo || '';
   document.getElementById('pedLista').value = o.lista || '';
-  cruzarPedido();
+  pedidoAtual = JSON.parse(JSON.stringify(o));
+  (pedidoAtual.itens || []).forEach(it => {
+    if (!it.encontrado) return;
+    const matches = estoque.filter(c => c.nome.toLowerCase() === String(it.nome || '').toLowerCase() && c.qtd > 0);
+    it.alternativas = matches;
+    it.cardRef = matches.find(c => (c.set || '') === (it.set || '') && (c.pasta || 'Geral') === (it.pasta || 'Geral')) || matches[0] || null;
+  });
   orcamentosSalvos.splice(i, 1);
-  localStorage.setItem('orcamentosSalvos', JSON.stringify(orcamentosSalvos));
+  salvarOrcamentos();
+  renderPedidoTabela();
   renderOrcamentosSalvos();
 }
 
@@ -2224,6 +2574,7 @@ function darBaixa() {
   seqSaida++;
   const codigo = 'GIV' + String(seqSaida).padStart(4, '0');
   localStorage.setItem('seqSaida', seqSaida);
+  salvarConfig('seqSaida', seqSaida);
   pedidoAtual.codigo = codigo;
   pedidoAtual.itens.forEach(it => {
     if (it.encontrado && it.cardRef) {
@@ -2231,8 +2582,8 @@ function darBaixa() {
       if (it.cardRef.qtd < 0) it.cardRef.qtd = 0;
     }
   });
-  pedidosHistorico.unshift({ ...pedidoAtual, itens: pedidoAtual.itens.map(i => ({ ...i, cardRef: undefined, alternativas: undefined })) });
-  localStorage.setItem('pedidosHistorico', JSON.stringify(pedidosHistorico));
+  pedidosHistorico.unshift(limparPedido(pedidoAtual));
+  salvarSaidas();
   filtered = [...estoque];
   renderEstoque();
   renderPastas();
@@ -2301,12 +2652,18 @@ document.querySelectorAll('nav button').forEach(btn => {
 
 document.addEventListener('DOMContentLoaded', async () => {
   await carregarRegrasPVS();
+  await carregarPastasMeta();
   await carregarListaClasseA();
   await carregarEstoqueServidor();
+  await carregarRegistros();
   renderPastas();
   renderHistorico();
   renderOrcamentosSalvos();
 });
+function linhaCardPopup(card, extra) {
+  return `<strong>${esc(card.nome)}</strong>${extra || ''}<br>LLP: ${formatMoney(card.ml)} | PVS: ${formatMoney(card.pvs)}<br>Idioma: ${esc(card.lang) || '-'} | Estado: ${esc(card.cond) || '-'}<br>Extras: ${esc(card.extras) || '-'} | Pasta: ${esc(card.pasta) || '-'}<br>Qtd em estoque: ${card.qtd}`;
+}
+
 document.addEventListener('mouseover', async function(e) {
   const td = e.target.closest('.card-name');
   if (!td) return;
@@ -2318,7 +2675,7 @@ document.addEventListener('mouseover', async function(e) {
 
   clearTimeout(popupTimeout);
   popupTimeout = setTimeout(async () => {
-    cardPopup.innerHTML = `<strong>${card.nome}</strong><br>ML: R$ ${card.ml.toFixed(2)} | PVS: R$ ${card.pvs.toFixed(2)}<br>Qtd em estoque: ${card.qtd}<br><span class="muted">Carregando imagem...</span>`;
+    cardPopup.innerHTML = linhaCardPopup(card) + '<br><span class="muted">Carregando imagem...</span>';
     cardPopup.style.display = 'block';
     cardPopup.style.visibility = 'hidden'; // esconde enquanto calcula posição
 
@@ -2374,7 +2731,7 @@ document.addEventListener('mouseover', async function(e) {
         const img = data.image_uris?.normal || data.card_faces?.[0]?.image_uris?.normal;
         if (img) {
           const setInfo = data.set_name ? `<br><span class="muted">${data.set_name} (${data.set.toUpperCase()})</span>` : '';
-          cardPopup.innerHTML = `<img src="${img}" alt="${nome}" onload="this.closest('.card-popup') && window.__repositionPopup && window.__repositionPopup()"><strong>${card.nome}</strong>${setInfo}<br>ML: R$ ${card.ml.toFixed(2)} | PVS: R$ ${card.pvs.toFixed(2)}<br>Qtd em estoque: ${card.qtd}`;
+          cardPopup.innerHTML = `<img src="${img}" alt="${nome}" onload="this.closest('.card-popup') && window.__repositionPopup && window.__repositionPopup()">` + linhaCardPopup(card, setInfo);
           window.__repositionPopup = posicionar;
           setTimeout(posicionar, 50);
         }
@@ -2384,13 +2741,13 @@ document.addEventListener('mouseover', async function(e) {
           const data = await fallback.json();
           const img = data.image_uris?.normal || data.card_faces?.[0]?.image_uris?.normal;
           if (img) {
-            cardPopup.innerHTML = `<img src="${img}" alt="${nome}"><strong>${card.nome}</strong><br><span class="muted">Edição mais recente</span><br>ML: R$ ${card.ml.toFixed(2)} | PVS: R$ ${card.pvs.toFixed(2)}<br>Qtd: ${card.qtd}`;
+            cardPopup.innerHTML = `<img src="${img}" alt="${nome}">` + linhaCardPopup(card, '<br><span class="muted">Edição mais recente</span>');
             setTimeout(posicionar, 50);
           }
         }
       }
     } catch (err) {
-      cardPopup.innerHTML = `<strong>${card.nome}</strong><br>ML: R$ ${card.ml.toFixed(2)} | PVS: R$ ${card.pvs.toFixed(2)}<br>Qtd: ${card.qtd}<br><span class="muted">Imagem indisponível</span>`;
+      cardPopup.innerHTML = linhaCardPopup(card) + '<br><span class="muted">Imagem indisponível</span>';
     }
     setTimeout(posicionar, 100);
   }, 300);
