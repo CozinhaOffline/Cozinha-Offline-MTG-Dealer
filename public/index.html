@@ -99,7 +99,7 @@
   <img src="logo.png" alt="Cozinha Offline Store">
   <div>
     <h1>Cozinha Offline Store</h1>
-    <p>Gestão de estoque, pedidos e orçamentos · versão 26/10-3</p>
+    <p>Gestão de estoque, pedidos e orçamentos · versão 26/10-4</p>
   </div>
 </header>
 <nav>
@@ -1925,25 +1925,39 @@ function escolherPasta(callback) {
   return nova;
 }
 
-function adicionarAoEstoque() {
+async function adicionarAoEstoque() {
   if (!pendingImport.length) { alert('Nada para importar.'); return; }
   const pasta = escolherPasta();
   if (!pasta) return;
-  pendingImport.forEach(c => c.pasta = pasta);
+  pendingImport.forEach(c => { c.pasta = pasta; aplicarCalculos(c); });
   const novos = pendingImport.slice();
-  estoque = estoque.concat(novos);
-  filtered = [...estoque];
   document.getElementById('importModal').style.display = 'none';
   pendingImport = [];
+  const lote = 400;
+  let gravadas = 0;
+  try {
+    for (let i = 0; i < novos.length; i += lote) {
+      const fatia = novos.slice(i, i + lote);
+      const resp = await fetch('/api/estoque/importar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(fatia)
+      });
+      if (!resp.ok) {
+        const txt = await resp.text();
+        alert('A importação parou em ' + gravadas + ' de ' + novos.length + ' cartas.\n' + txt.slice(0, 280));
+        break;
+      }
+      gravadas += fatia.length;
+      estoque = estoque.concat(fatia);
+    }
+  } catch (e) {
+    alert('A importação parou em ' + gravadas + ' de ' + novos.length + '. Erro: ' + (e.message || e));
+  }
+  filtered = [...estoque];
   renderPastas();
   renderEstoque();
-  // Envia apenas os novos itens
-  fetch('/api/estoque/importar', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(novos)
-  }).catch(() => {});
-  alert(`Cartas adicionadas na pasta "${pasta}".`);
+  if (gravadas === novos.length) alert(gravadas + ' cartas gravadas na pasta "' + pasta + '".');
 }
 
 function limparEstoque() {
