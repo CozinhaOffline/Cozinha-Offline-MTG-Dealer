@@ -21,29 +21,65 @@ app.get('/api/estoque', async (req, res) => {
   }
 });
 
-// Substituir estoque completo (usado em exclusões e sincronização total)
+function valoresCarta(c) {
+  const qtd = c.qtd == null || c.qtd === '' ? 1 : parseInt(c.qtd, 10);
+  return [
+    c.nome || 'Sem nome', c.nomePt || '', Number.isFinite(qtd) ? qtd : 1,
+    c.set || '', c.setCode || '', c.scryfallId || '',
+    c.cond || 'NM', c.lang || 'EN', c.extras || '', c.foil ? 1 : 0,
+    c.pasta || 'Geral', c.ml || 0, c.custo || 0, c.pvs || 0, c.liquidez || 'C',
+    c.codigo || '', c.desconto || 0, c.obs || '', c.operacao || '', c.depara || '', c.data || '',
+    c.cor || '', c.raridade || '', c.pvsManual ? 1 : 0
+  ];
+}
+
+const COLS_CARTA = `(nome, nome_pt, qtd, set_name, set_code, scryfall_id, cond, lang, extras, foil, pasta, ml, custo, pvs, liquidez, codigo, desconto, obs, operacao, depara, data, cor, raridade, pvs_manual)`;
+
+async function inserirEmLote(client, cartas) {
+  const tamanho = 200;
+  const nCols = 24;
+  for (let i = 0; i < cartas.length; i += tamanho) {
+    const fatia = cartas.slice(i, i + tamanho);
+    const valores = [];
+    const marcas = fatia.map((c, idx) => {
+      valores.push(...valoresCarta(c));
+      const inicio = idx * nCols;
+      return `(${Array.from({ length: nCols }, (_, k) => '$' + (inicio + k + 1)).join(',')})`;
+    });
+    await client.query(`INSERT INTO cartas ${COLS_CARTA} VALUES ${marcas.join(',')}`, valores);
+  }
+}
+
+// Substituir estoque completo. Tudo acontece numa transação:
+// se a gravação falhar no meio, o estoque antigo continua inteiro.
 app.post('/api/estoque/substituir', async (req, res) => {
   const cartas = req.body;
   if (!Array.isArray(cartas)) return res.status(400).json({ error: 'Envie um array de cartas' });
+  if (cartas.length > 200000) return res.status(400).json({ error: 'Lote grande demais' });
 
+  const client = await db.pool.connect();
   try {
-    await db.query('DELETE FROM cartas');
-    for (const c of cartas) {
-      await db.query(
-        `INSERT INTO cartas (nome, nome_pt, qtd, set_name, set_code, scryfall_id, cond, lang, extras, foil, pasta, ml, custo, pvs, liquidez, codigo, desconto, obs, operacao, depara, data, cor, raridade, pvs_manual)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)`,
-        [
-          c.nome, c.nomePt || '', c.qtd || 1, c.set || '', c.setCode || '', c.scryfallId || '',
-          c.cond || 'NM', c.lang || 'EN', c.extras || '', c.foil ? 1 : 0,
-          c.pasta || 'Geral', c.ml || 0, c.custo || 0, c.pvs || 0, c.liquidez || 'C',
-          c.codigo || '', c.desconto || 0, c.obs || '', c.operacao || '', c.depara || '', c.data || '',
-          c.cor || '', c.raridade || '', c.pvsManual ? 1 : 0
-        ]
-      );
+    await client.query('BEGIN');
+    const atual = await client.query('SELECT COUNT(*)::int AS n FROM cartas');
+    const tinha = atual.rows[0].n;
+    const forcar = req.get('x-forcar') === 'sim';
+    if (!forcar && tinha > 20 && cartas.length < tinha * 0.95) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        error: `Gravação bloqueada para não apagar estoque. O navegador enviou ${cartas.length} cartas e o banco tem ${tinha}. Recarregue a página.`,
+        banco: tinha,
+        enviado: cartas.length
+      });
     }
-    res.json({ ok: true, total: cartas.length });
+    await client.query('DELETE FROM cartas');
+    await inserirEmLote(client, cartas);
+    await client.query('COMMIT');
+    res.json({ ok: true, total: cartas.length, antes: tinha });
   } catch (err) {
+    try { await client.query('ROLLBACK'); } catch (e) {}
     res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
   }
 });
 
@@ -51,24 +87,19 @@ app.post('/api/estoque/substituir', async (req, res) => {
 app.post('/api/estoque/importar', async (req, res) => {
   const cartas = req.body;
   if (!Array.isArray(cartas)) return res.status(400).json({ error: 'Envie um array de cartas' });
+  if (!cartas.length) return res.json({ ok: true, importadas: 0 });
 
+  const client = await db.pool.connect();
   try {
-    for (const c of cartas) {
-      await db.query(
-        `INSERT INTO cartas (nome, nome_pt, qtd, set_name, set_code, scryfall_id, cond, lang, extras, foil, pasta, ml, custo, pvs, liquidez, codigo, desconto, obs, operacao, depara, data, cor, raridade, pvs_manual)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)`,
-        [
-          c.nome, c.nomePt || '', c.qtd || 1, c.set || '', c.setCode || '', c.scryfallId || '',
-          c.cond || 'NM', c.lang || 'EN', c.extras || '', c.foil ? 1 : 0,
-          c.pasta || 'Geral', c.ml || 0, c.custo || 0, c.pvs || 0, c.liquidez || 'C',
-          c.codigo || '', c.desconto || 0, c.obs || '', c.operacao || '', c.depara || '', c.data || '',
-          c.cor || '', c.raridade || '', c.pvsManual ? 1 : 0
-        ]
-      );
-    }
+    await client.query('BEGIN');
+    await inserirEmLote(client, cartas);
+    await client.query('COMMIT');
     res.json({ ok: true, importadas: cartas.length });
   } catch (err) {
+    try { await client.query('ROLLBACK'); } catch (e) {}
     res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
   }
 });
 
@@ -113,7 +144,7 @@ app.post('/api/atualizar-ml', async (req, res) => {
 
 // Teste de conexão com o banco
 app.get('/api/status', async (req, res) => {
-  const versao = 'pg-v2';
+  const versao = 'pg-v3-seguro';
   if (!process.env.DATABASE_URL) {
     return res.json({ ok: false, versao, banco: 'falhou', erro: 'DATABASE_URL nao esta configurada no Render' });
   }
