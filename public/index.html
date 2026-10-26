@@ -75,15 +75,31 @@
   }
   .card-popup img { width: 100%; max-height: 380px; object-fit: contain; border-radius: 6px; margin-bottom: 0.5rem; }
   .card-popup strong { color: var(--azul); }
-
+  .topbar { position: sticky; top: 0; z-index: 500; }
+  .estoque-resumo {
+    position: fixed; top: 118px; right: 16px; width: 250px; z-index: 40;
+    background: white; border: 1px solid var(--borda); border-radius: 10px;
+    padding: 0.8rem 0.9rem; box-shadow: 0 2px 8px rgba(0,0,0,0.08); font-size: 0.82rem;
+  }
+  .estoque-resumo strong { color: var(--azul); }
+  #estoque { padding-right: 270px; }
+  .pasta-dots {
+    position: absolute; top: 6px; right: 6px; border: none; background: rgba(255,255,255,0.85);
+    border-radius: 6px; cursor: pointer; font-size: 1.2rem; line-height: 1; padding: 0.15rem 0.35rem;
+  }
+  @media (max-width: 1100px) {
+    #estoque { padding-right: 0; }
+    .estoque-resumo { position: static; width: auto; margin-bottom: 1rem; }
+  }
 </style>
 </head>
 <body>
+<div class="topbar">
 <header>
   <img src="logo.png" alt="Cozinha Offline Store">
   <div>
     <h1>Cozinha Offline Store</h1>
-    <p>Gestão de estoque, pedidos e orçamentos · versão 26/10</p>
+    <p>Gestão de estoque, pedidos e orçamentos · versão 26/10-2</p>
   </div>
 </header>
 <nav>
@@ -95,8 +111,10 @@
   <button data-tab="ajuda">Ajuda</button>
   <button data-tab="config">Configurações</button>
 </nav>
+</div>
 <main>
   <div id="estoque" class="tab active">
+    <aside id="estoqueResumo" class="estoque-resumo"></aside>
     <div class="card">
       <h2>Importar estoque</h2>
       <div class="row">
@@ -381,14 +399,28 @@
           <p class="muted">Usado só quando o PVS calculado fica abaixo do LLP ou do custo com a margem.</p>
         </div>
       </div>
+      <h3>Faixas para todas as cartas</h3>
+      <p class="muted">Vale para qualquer liquidez. Se o LLP for até o valor da faixa, o PVS parte de LLP vezes esse multiplicador. A última linha vale para o que passar das anteriores.</p>
+      <div id="faixasTodas"></div>
+      <button class="secondary small" type="button" onclick="adicionarFaixa('todas')">Adicionar faixa</button>
       <h3>Faixas da liquidez A</h3>
-      <p class="muted">Se o LLP for até o valor da faixa, o PVS dessa carta é o LLP vezes o multiplicador. A última linha vale para tudo que passar das faixas anteriores.</p>
+      <p class="muted">Além da faixa geral, a liquidez A pode subir o preço. Usa o maior entre a faixa geral e esta.</p>
       <div id="faixasA"></div>
-      <button class="secondary small" type="button" onclick="adicionarFaixaA()">Adicionar faixa</button>
+      <button class="secondary small" type="button" onclick="adicionarFaixa('A')">Adicionar faixa</button>
       <div style="margin-top:1rem;">
         <button class="primary" type="button" onclick="salvarRegrasPVS(true)">Salvar e recalcular estoque</button>
         <button class="secondary" type="button" onclick="restaurarRegrasPVS()">Restaurar padrão</button>
       </div>
+    </div>
+    <div class="card">
+      <h2>Segurança</h2>
+      <h3>Senha de administrador</h3>
+      <p class="muted">Pedida para alterar preço e aplicar desconto num orçamento. A senha inicial é 123456.</p>
+      <label>Senha atual</label>
+      <input type="password" id="cfgSenhaAtual" autocomplete="current-password">
+      <label>Nova senha</label>
+      <input type="password" id="cfgSenhaNova" autocomplete="new-password">
+      <button class="primary small" type="button" onclick="trocarSenhaAdmin()">Alterar senha</button>
     </div>
   </div>
   <div id="ajuda" class="tab">
@@ -404,6 +436,11 @@
     </div>
   </div>
 </main>
+<div id="menuPasta" style="display:none;position:fixed;z-index:600;background:white;border:1px solid #e0d8cc;border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,.15);min-width:210px;padding:0.35rem;">
+  <button class="secondary small" style="display:block;width:100%;margin:0.2rem 0;" onclick="acaoMenuPasta('editar')">Editar</button>
+  <button class="secondary small" id="menuPastaExcluir" style="display:block;width:100%;margin:0.2rem 0;background:#c41e3a;" onclick="acaoMenuPasta('excluir')">Excluir</button>
+  <button class="secondary small" style="display:block;width:100%;margin:0.2rem 0;" onclick="acaoMenuPasta('csv')">CSV para importar</button>
+</div>
 
 <script>
 const { jsPDF } = window.jspdf;
@@ -1259,6 +1296,14 @@ function regrasPVSPadrao() {
       { ate: 10, mult: 1.4 },
       { ate: 50, mult: 1.15 },
       { ate: null, mult: 1.025 }
+    ],
+    faixasTodas: [
+      { ate: 1, mult: 1 },
+      { ate: 2, mult: 1 },
+      { ate: 5, mult: 1 },
+      { ate: 10, mult: 1 },
+      { ate: 50, mult: 1 },
+      { ate: null, mult: 1 }
     ]
   };
 }
@@ -1274,9 +1319,9 @@ function fmtRegra(n) {
   return String(n).replace('.', ',');
 }
 
-function lerRegrasDoFormulario() {
+function lerFaixas(seletor) {
   const faixas = [];
-  document.querySelectorAll('#faixasA .faixa-a').forEach(row => {
+  document.querySelectorAll(seletor + ' .faixa-a').forEach(row => {
     const ateRaw = row.querySelector('.faixa-ate').value.trim();
     const mult = lerNumeroCampo(row.querySelector('.faixa-mult').value, 1);
     const acima = row.dataset.acima === '1' || ateRaw === '';
@@ -1288,12 +1333,17 @@ function lerRegrasDoFormulario() {
     return a.ate - b.ate;
   });
   if (!faixas.some(f => f.ate == null)) faixas.push({ ate: null, mult: 1 });
+  return faixas;
+}
+
+function lerRegrasDoFormulario() {
   return {
     pvsBasica: lerNumeroCampo(document.getElementById('cfgPvsBasica').value, 0.35),
     terras: document.getElementById('cfgTerras').value.split(',').map(s => s.trim().toLowerCase()).filter(Boolean),
     margemCusto: lerNumeroCampo(document.getElementById('cfgMargemCusto').value, 20),
     pisoMult: lerNumeroCampo(document.getElementById('cfgPisoMult').value, 1.025),
-    faixasA: faixas
+    faixasA: lerFaixas('#faixasA'),
+    faixasTodas: lerFaixas('#faixasTodas')
   };
 }
 
@@ -1305,41 +1355,50 @@ function preencherRegrasNoFormulario() {
   document.getElementById('cfgTerras').value = (r.terras || []).join(', ');
   document.getElementById('cfgMargemCusto').value = fmtRegra(r.margemCusto);
   document.getElementById('cfgPisoMult').value = fmtRegra(r.pisoMult);
-  renderFaixasA();
+  renderFaixas('#faixasA', r.faixasA || [], 'A');
+  renderFaixas('#faixasTodas', r.faixasTodas || regrasPVSPadrao().faixasTodas, 'todas');
 }
 
-function renderFaixasA() {
-  const box = document.getElementById('faixasA');
+function renderFaixas(seletor, faixas, qual) {
+  const box = document.querySelector(seletor);
   if (!box) return;
-  const faixas = regrasPVS.faixasA || [];
   box.innerHTML = faixas.map((f, i) => {
-    const acima = f.ate == null || i === faixas.length - 1 && f.ate == null;
     return `<div class="faixa-a filters" data-acima="${f.ate == null ? '1' : '0'}" style="margin-bottom:0.4rem;">
       <div><label>${f.ate == null ? 'Acima das faixas anteriores' : 'Se o LLP for até (R$)'}</label>
         <input class="faixa-ate" type="text" ${f.ate == null ? 'disabled placeholder="acima"' : `value="${fmtRegra(f.ate)}"`}></div>
       <div><label>Multiplicar o LLP por</label>
         <input class="faixa-mult" type="text" value="${fmtRegra(f.mult)}"></div>
-      <div style="align-self:end;">${f.ate == null ? '' : `<button class="secondary small" type="button" style="background:#c41e3a;" onclick="removerFaixaA(${i})">Remover</button>`}</div>
+      <div style="align-self:end;">${f.ate == null ? '' : `<button class="secondary small" type="button" style="background:#c41e3a;" onclick="removerFaixa('${qual}', ${i})">Remover</button>`}</div>
     </div>`;
   }).join('');
 }
 
-function adicionarFaixaA() {
+function renderFaixasA() {
+  renderFaixas('#faixasA', regrasPVS.faixasA || [], 'A');
+  renderFaixas('#faixasTodas', regrasPVS.faixasTodas || [], 'todas');
+}
+
+function adicionarFaixa(qual) {
   regrasPVS = lerRegrasDoFormulario();
-  const acima = regrasPVS.faixasA.filter(f => f.ate == null);
-  const nums = regrasPVS.faixasA.filter(f => f.ate != null);
+  const chave = qual === 'A' ? 'faixasA' : 'faixasTodas';
+  const acima = regrasPVS[chave].filter(f => f.ate == null);
+  const nums = regrasPVS[chave].filter(f => f.ate != null);
   const ultimo = nums.length ? nums[nums.length - 1].ate : 0;
   nums.push({ ate: Math.round((ultimo + 10) * 100) / 100, mult: 1 });
-  regrasPVS.faixasA = nums.concat(acima.length ? acima : [{ ate: null, mult: 1 }]);
+  regrasPVS[chave] = nums.concat(acima.length ? acima : [{ ate: null, mult: 1 }]);
   renderFaixasA();
 }
 
-function removerFaixaA(i) {
+function removerFaixa(qual, i) {
   regrasPVS = lerRegrasDoFormulario();
-  regrasPVS.faixasA = regrasPVS.faixasA.filter((f, idx) => idx !== i || f.ate == null);
-  if (!regrasPVS.faixasA.some(f => f.ate == null)) regrasPVS.faixasA.push({ ate: null, mult: 1.025 });
+  const chave = qual === 'A' ? 'faixasA' : 'faixasTodas';
+  regrasPVS[chave] = regrasPVS[chave].filter((f, idx) => idx !== i || f.ate == null);
+  if (!regrasPVS[chave].some(f => f.ate == null)) regrasPVS[chave].push({ ate: null, mult: 1 });
   renderFaixasA();
 }
+
+function adicionarFaixaA() { adicionarFaixa('A'); }
+function removerFaixaA(i) { removerFaixa('A', i); }
 
 async function carregarRegrasPVS() {
   try {
@@ -1391,22 +1450,25 @@ function calcPVS(card) {
   if (terras.includes(nome)) return Math.round((parseFloat(r.pvsBasica) || 0) * 100) / 100;
   const margem = 1 + (parseFloat(r.margemCusto) || 0) / 100;
   const pisoBase = Math.max(llp, custo * margem);
-  let pvs = llp;
-  if (card.liquidez === 'A' && llp > 0) {
-    const faixas = (r.faixasA || []).slice().sort((a, b) => {
-      if (a.ate == null) return 1;
-      if (b.ate == null) return -1;
-      return a.ate - b.ate;
-    });
-    let mult = faixas.length ? faixas[faixas.length - 1].mult : 1;
-    for (const f of faixas) {
-      if (f.ate == null) { mult = f.mult; break; }
-      if (llp <= f.ate) { mult = f.mult; break; }
-    }
-    pvs = llp * (parseFloat(mult) || 1);
-  }
+  let pvs = llp * multFaixa(r.faixasTodas, llp);
+  if (card.liquidez === 'A' && llp > 0) pvs = Math.max(pvs, llp * multFaixa(r.faixasA, llp));
   if (pvs < pisoBase) pvs = pisoBase * (parseFloat(r.pisoMult) || 1);
   return Math.round(pvs * 100) / 100;
+}
+
+function multFaixa(faixas, llp) {
+  const list = (faixas || []).slice().sort((a, b) => {
+    if (a.ate == null) return 1;
+    if (b.ate == null) return -1;
+    return a.ate - b.ate;
+  });
+  if (!list.length) return 1;
+  let mult = list[list.length - 1].mult;
+  for (const f of list) {
+    if (f.ate == null) { mult = f.mult; break; }
+    if (llp <= f.ate) { mult = f.mult; break; }
+  }
+  return parseFloat(mult) || 1;
 }
 
 function aplicarCalculos(card) {
@@ -1431,7 +1493,7 @@ function abrirModalImportacao() {
   cols.forEach(([k, label]) => {
     html += `<div><label>${label}</label><input type="text" class="modal-filter" data-k="${k}" placeholder="Filtrar..."></div>`;
   });
-  html += '</div>';
+  html += '</div><div style="margin:0.4rem 0 0.8rem;"><button type="button" class="secondary small" onclick="document.querySelectorAll(\'.modal-filter\').forEach(function(i){i.value=\'\'});renderModalRows();">Limpar filtros</button></div>';
   html += '<table style="width:100%;font-size:0.8rem;"><thead><tr><th></th>' + cols.map(c=>`<th>${c[1]}</th>`).join('') + '</tr></thead><tbody id="modalBody">';
   html += '</tbody></table>';
   cont.innerHTML = html;
@@ -1599,17 +1661,14 @@ function renderPastas() {
     const active = window.pastaAtiva === p ? 'border:2px solid var(--vermelho);' : 'border:1px solid var(--borda);';
     const img = pastasMeta[p] && pastasMeta[p].imagem;
     const bg = img
-      ? `background-image:linear-gradient(rgba(248,250,252,0.8),rgba(248,250,252,0.8)),url('${img}');background-size:cover;background-position:center;`
+      ? `background-image:linear-gradient(rgba(248,250,252,0.75),rgba(248,250,252,0.75)),url('${img}');background-size:cover;background-position:center;`
       : 'background:#f8fafc;';
-    return `<div onclick="filtrarPorPasta(${i})" style="display:inline-block;width:200px;margin:0.4rem;padding:1rem;border-radius:10px;cursor:pointer;${active}${bg}">
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:0.4rem;">
-        <div style="font-weight:600;color:var(--azul);">${esc(p)}</div>
-        <button class="secondary small" title="Editar pasta" onclick="event.stopPropagation();editarPasta(${i})">Editar</button>
-      </div>
+    return `<div onclick="filtrarPorPasta(${i})" style="position:relative;display:inline-block;width:200px;margin:0.4rem;padding:1rem;border-radius:10px;cursor:pointer;${active}${bg}">
+      <button class="pasta-dots" title="Opções" onclick="event.stopPropagation();abrirMenuPasta(event, ${i})">⋯</button>
+      <div style="font-weight:600;color:var(--azul);padding-right:1.2rem;">${esc(p)}</div>
       <div class="muted">${qtd} cartas</div>
       <div class="muted">LLP ${formatMoney(llp)}</div>
       <div class="muted">PVS ${formatMoney(pvs)}</div>
-      ${p !== 'Geral' ? `<button class="secondary small" style="background:#c41e3a;margin-top:0.4rem;" onclick="event.stopPropagation();excluirPasta(${i})">Excluir</button>` : ''}
     </div>`;
   }).join('');
   const sel = document.getElementById('transferPasta');
@@ -1617,7 +1676,67 @@ function renderPastas() {
 }
 
 function esc(s) {
-  return String(s ?? '').replace(/&/g,'&').replace(/</g,'<').replace(/"/g,'"');
+  return String(s ?? '').replace(/&/g, '&' + 'amp;').replace(/</g, '&' + 'lt;').replace(/"/g, '&' + 'quot;');
+}
+
+let menuPastaIdx = -1;
+function abrirMenuPasta(ev, i) {
+  menuPastaIdx = i;
+  const menu = document.getElementById('menuPasta');
+  document.getElementById('menuPastaExcluir').style.display = pastas[i] === 'Geral' ? 'none' : 'block';
+  menu.style.display = 'block';
+  menu.style.left = Math.min(ev.clientX, window.innerWidth - 230) + 'px';
+  menu.style.top = Math.min(ev.clientY, window.innerHeight - 140) + 'px';
+}
+function acaoMenuPasta(acao) {
+  const i = menuPastaIdx;
+  document.getElementById('menuPasta').style.display = 'none';
+  if (acao === 'editar') editarPasta(i);
+  if (acao === 'excluir') excluirPasta(i);
+  if (acao === 'csv') {
+    const nome = pastas[i];
+    exportarGrupo(estoque.filter(c => (c.pasta || 'Geral') === nome), 'pasta-' + nome);
+  }
+}
+document.addEventListener('click', (e) => {
+  const menu = document.getElementById('menuPasta');
+  if (!menu || menu.style.display === 'none') return;
+  if (e.target.closest && (e.target.closest('#menuPasta') || e.target.closest('.pasta-dots'))) return;
+  menu.style.display = 'none';
+});
+
+function exportarGrupo(cartas, nomeBase) {
+  if (!cartas.length) { alert('Não há itens para exportar.'); return; }
+  const escolha = prompt('CSV para importar em:\n1 = Ligamagic\n2 = Manabox\n3 = COStorage');
+  const mapa = { '1': 'ligamagic', '2': 'manabox', '3': 'costorage' };
+  if (!mapa[escolha]) return;
+  baixarCsvCartas(cartas, mapa[escolha], nomeBase);
+}
+
+function csvCampo(v) {
+  const s = String(v ?? '');
+  if (/[;"\n\r]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+  return s;
+}
+
+function baixarCsvCartas(cartas, formato, nomeBase) {
+  let header, linhas;
+  if (formato === 'ligamagic') {
+    header = ['Quantidade', 'Card (EN)', 'Card (PT)', 'Edicao (Sigla)', 'Edicao (EN)', 'Qualidade (M NM SP MP HP D)', 'Idioma (BR EN DE ES FR IT JP KO RU TW)', 'Extras', 'Coleção'];
+    linhas = cartas.map(c => [c.qtd, c.nome, c.nomePt || '', (c.setCode || '').toUpperCase(), c.set || '', c.cond || '', c.lang || '', c.extras || '', c.pasta || '']);
+  } else if (formato === 'manabox') {
+    header = ['Name', 'Set name', 'Set code', 'Quantity', 'Condition', 'Language', 'Foil', 'Scryfall ID'];
+    linhas = cartas.map(c => [c.nome, c.set || '', c.setCode || '', c.qtd, c.cond || '', c.lang || '', /foil/i.test(c.extras || '') || c.foil ? 'foil' : '', c.scryfallId || '']);
+  } else {
+    header = ['Código', 'Qde.', 'CARD PT', 'CARD EN', 'EDIÇÃO', 'EDIÇÃO (sigla)', 'COR', 'Raridade', 'Estado', 'Idioma', 'EXTRAS', 'OBS', 'Operação', 'Data', 'De/Para', 'LLP', 'Desconto', 'Custo', 'PVS', 'Liquidez'];
+    linhas = cartas.map(c => [c.codigo || '', c.qtd, c.nomePt || '', c.nome || '', c.set || '', c.setCode || '', c.cor || '', c.raridade || '', c.cond || '', c.lang || '', c.extras || '', c.obs || '', c.operacao || '', c.data || '', c.depara || '', c.ml || 0, c.desconto || 0, c.custo || 0, c.pvs || 0, c.liquidez || '']);
+  }
+  const texto = [header].concat(linhas).map(row => row.map(csvCampo).join(';')).join('\r\n');
+  const blob = new Blob([texto], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = (nomeBase || 'cartas').replace(/[^\w\-]+/g, '_') + '-' + formato + '.csv';
+  a.click();
 }
 
 function transferirSelecionados() {
@@ -1961,12 +2080,47 @@ function aplicarFiltros() {
 function limparFiltros() {
   const nome = document.getElementById('fNomeBulk');
   const cor = document.getElementById('fCorBulk');
+  const sort = document.getElementById('fSort');
   if (nome) nome.value = '';
   if (cor) cor.value = '';
+  if (sort) sort.value = 'nome-az';
   Object.keys(colFilterVals).forEach(k => delete colFilterVals[k]);
   window.pastaAtiva = '';
   renderPastas();
   aplicarFiltros();
+}
+
+function atualizarResumo() {
+  const el = document.getElementById('estoqueResumo');
+  if (!el) return;
+  const qtd = estoque.reduce((s, c) => s + (parseFloat(c.qtd) || 0), 0);
+  const llp = estoque.reduce((s, c) => s + (parseFloat(c.ml) || 0) * (parseFloat(c.qtd) || 0), 0);
+  const custo = estoque.reduce((s, c) => s + (parseFloat(c.custo) || 0) * (parseFloat(c.qtd) || 0), 0);
+  const pvs = estoque.reduce((s, c) => s + (parseFloat(c.pvs) || 0) * (parseFloat(c.qtd) || 0), 0);
+  const por = { A: 0, B: 0, C: 0, D: 0 };
+  estoque.forEach(c => {
+    const k = String(c.liquidez || 'C').toUpperCase();
+    const v = (parseFloat(c.pvs) || 0) * (parseFloat(c.qtd) || 0);
+    if (por[k] == null) por.C += v; else por[k] += v;
+  });
+  const pct = (v) => pvs ? (v / pvs * 100).toFixed(1).replace('.', ',') : '0,0';
+  let somaDesc = 0, somaQ = 0;
+  estoque.forEach(c => {
+    const q = parseFloat(c.qtd) || 0;
+    somaDesc += (parseFloat(c.desconto) || 0) * q;
+    somaQ += q;
+  });
+  const media = somaQ ? (somaDesc / somaQ) : 0;
+  el.innerHTML = `<div style="font-weight:700;color:var(--azul);margin-bottom:0.35rem;">Resumo do estoque</div>
+    <div>Cartas: <strong>${qtd}</strong></div>
+    <div>LLP: <strong>${formatMoney(llp)}</strong></div>
+    <div>Custo: <strong>${formatMoney(custo)}</strong></div>
+    <div>PVS: <strong>${formatMoney(pvs)}</strong></div>
+    <div style="margin-top:0.35rem;">PVS A ${pct(por.A)}%</div>
+    <div>PVS B ${pct(por.B)}%</div>
+    <div>PVS C ${pct(por.C)}%</div>
+    <div>PVS D ${pct(por.D)}%</div>
+    <div style="margin-top:0.35rem;">Desconto médio: <strong>${media.toFixed(1).replace('.', ',')}%</strong></div>`;
 }
 
 let viewMode = 'detail';
@@ -1990,6 +2144,7 @@ function renderEstoque() {
     document.getElementById('estoqueEmpty').style.display = 'block';
     document.getElementById('estoqueEmpty').textContent = 'Nenhum estoque carregado ainda. Importe um CSV acima.';
     thead.innerHTML = '';
+    atualizarResumo();
     return;
   }
   document.getElementById('estoqueEmpty').style.display = filtered.length ? 'none' : 'block';
@@ -2064,6 +2219,7 @@ function renderEstoque() {
       salvarEstoqueServidor();
     };
   });
+  atualizarResumo();
 }
 
 function removerLinha(i) {
@@ -2295,34 +2451,52 @@ let pedidosHistorico = JSON.parse(localStorage.getItem('pedidosHistorico') || '[
 let orcamentosSalvos = JSON.parse(localStorage.getItem('orcamentosSalvos') || '[]');
 let pedidoAtual = null;
 let seqSaida = parseInt(localStorage.getItem('seqSaida') || '0');
+let senhaAdmin = '123456';
 
 function limparPedido(p) {
+  const valores = valoresPedido(p);
   return {
+    id: p.id || ('reg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6)),
     cliente: p.cliente || '',
     titulo: p.titulo || '',
-    total: p.total || 0,
+    subtotal: valores.sub,
+    descontoPct: parseFloat(p.descontoPct) || 0,
+    frete: parseFloat(p.frete) || 0,
+    total: valores.total,
     data: p.data || '',
     codigo: p.codigo || null,
     lista: p.lista || '',
+    atualizado: new Date().toISOString(),
     itens: (p.itens || []).map(i => ({
-      qtd: i.qtd, nome: i.nome, set: i.set, lang: i.lang, cond: i.cond,
-      extras: i.extras, preco: i.preco, total: i.total, encontrado: !!i.encontrado,
-      pasta: i.pasta || '-'
+      qtd: i.qtd, nome: i.nome, nomePt: i.nomePt || '', set: i.set || '', setCode: i.setCode || '',
+      lang: i.lang, cond: i.cond, extras: i.extras, preco: i.preco, total: i.total,
+      encontrado: !!i.encontrado, pasta: i.pasta || '-'
     }))
   };
 }
 
+function valoresPedido(p) {
+  const sub = (p.itens || []).reduce((s, x) => s + (x.encontrado ? (parseFloat(x.qtd) || 0) * (parseFloat(x.preco) || 0) : 0), 0);
+  const pct = parseFloat(p.descontoPct) || 0;
+  const desc = sub * pct / 100;
+  const frete = parseFloat(p.frete) || 0;
+  return {
+    sub: Math.round(sub * 100) / 100,
+    desc: Math.round(desc * 100) / 100,
+    frete: Math.round(frete * 100) / 100,
+    total: Math.round((sub - desc + frete) * 100) / 100
+  };
+}
+
 async function salvarConfig(chave, valor) {
-  try {
-    localStorage.setItem('cfg_' + chave, JSON.stringify(valor));
-  } catch (e) {}
-  try {
-    await fetch('/api/config/' + chave, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(valor)
-    });
-  } catch (e) {}
+  try { localStorage.setItem('cfg_' + chave, JSON.stringify(valor)); } catch (e) {}
+  const resp = await fetch('/api/config/' + chave, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(valor)
+  });
+  if (!resp.ok) throw new Error(await resp.text());
+  return true;
 }
 
 async function lerConfig(chave) {
@@ -2340,30 +2514,55 @@ async function lerConfig(chave) {
   return null;
 }
 
-function salvarOrcamentos() {
+async function salvarOrcamentos() {
   const limpos = orcamentosSalvos.map(limparPedido);
   orcamentosSalvos = limpos;
   try { localStorage.setItem('orcamentosSalvos', JSON.stringify(limpos)); } catch (e) {}
-  salvarConfig('orcamentos', limpos);
+  await salvarConfig('orcamentos', limpos);
 }
 
-function salvarSaidas() {
+async function salvarSaidas() {
   const limpos = pedidosHistorico.map(limparPedido);
   pedidosHistorico = limpos;
   try { localStorage.setItem('pedidosHistorico', JSON.stringify(limpos)); } catch (e) {}
-  salvarConfig('saidas', limpos);
+  await salvarConfig('saidas', limpos);
+}
+
+function juntarListas(servidor, local) {
+  const mapa = new Map();
+  function por(lista) {
+    (lista || []).forEach((item, i) => {
+      if (!item) return;
+      const id = item.id || ('semid_' + i + '_' + (item.codigo || '') + '_' + (item.cliente || '') + '_' + (item.data || ''));
+      const atual = Object.assign({}, item, { id });
+      const prev = mapa.get(id);
+      if (!prev || String(atual.atualizado || '') >= String(prev.atualizado || '')) mapa.set(id, atual);
+    });
+  }
+  por(servidor);
+  por(local);
+  return [...mapa.values()].sort((a, b) => String(b.atualizado || b.data || '').localeCompare(String(a.atualizado || a.data || '')));
+}
+
+function lerListaLocal(chave) {
+  try { return JSON.parse(localStorage.getItem(chave) || '[]'); } catch (e) { return []; }
 }
 
 async function carregarRegistros() {
   const o = await lerConfig('orcamentos');
   const s = await lerConfig('saidas');
   const q = await lerConfig('seqSaida');
-  if (Array.isArray(o)) orcamentosSalvos = o;
-  else if (orcamentosSalvos.length) salvarOrcamentos();
-  if (Array.isArray(s)) pedidosHistorico = s;
-  else if (pedidosHistorico.length) salvarSaidas();
+  const senha = await lerConfig('senhaAdmin');
+  orcamentosSalvos = juntarListas(Array.isArray(o) ? o : [], lerListaLocal('orcamentosSalvos'));
+  pedidosHistorico = juntarListas(Array.isArray(s) ? s : [], lerListaLocal('pedidosHistorico'));
+  if (typeof senha === 'string' && senha) senhaAdmin = senha;
   if (typeof q === 'number') seqSaida = q;
-  else if (seqSaida) salvarConfig('seqSaida', seqSaida);
+  try {
+    if (JSON.stringify(o || []) !== JSON.stringify(orcamentosSalvos)) await salvarOrcamentos();
+    if (JSON.stringify(s || []) !== JSON.stringify(pedidosHistorico)) await salvarSaidas();
+  } catch (e) {
+    console.error(e);
+  }
 }
 
 function cruzarPedido() {
@@ -2389,9 +2588,13 @@ function cruzarPedido() {
     itens.push({ qtd, nome: card.nome, set: card.set, lang: card.lang, cond: card.cond, extras: card.extras, preco: card.pvs, total: sub, encontrado: true, pasta: card.pasta || 'Geral', cardRef: card, alternativas: matches });
   });
   pedidoAtual = {
+    id: 'orc_' + Date.now(),
     cliente: document.getElementById('pedCliente').value || 'Cliente',
     titulo: document.getElementById('pedTitulo').value || 'Pedido',
     itens, total,
+    descontoPct: 0,
+    frete: 0,
+    precosLiberados: false,
     data: new Date().toLocaleString('pt-BR'),
     codigo: null
   };
@@ -2417,14 +2620,20 @@ function renderPedidoTabela() {
         <td>${esc(it.pasta || '-')}</td>
         <td><input class="edit-input" value="${esc(it.lang || '')}" onchange="editarItemPedido(${i},'lang',this.value)"></td>
         <td><input class="edit-input" value="${esc(it.cond || '')}" onchange="editarItemPedido(${i},'cond',this.value)"></td>
-        <td><input class="edit-input" value="${formatMoney(it.preco)}" onchange="editarItemPedido(${i},'preco',this.value)"></td>
+        <td><input class="edit-input" value="${formatMoney(it.preco)}" ${pedidoAtual.precosLiberados ? '' : 'readonly'} onchange="editarItemPedido(${i},'preco',this.value)"></td>
         <td>${formatMoney(it.total)}</td>
         <td><button class="secondary small" style="background:#c41e3a;" onclick="removerItemPedido(${i})">×</button></td>
       </tr>`;
     }
   });
+  const conta = valoresPedido(pedidoAtual);
   html += `</tbody></table>
-    <div style="margin-top:1rem;font-size:1.15rem;font-weight:bold;">Total: ${formatMoney(pedidoAtual.total)}</div>
+    <div style="margin-top:1rem;">
+      <div>Subtotal: ${formatMoney(conta.sub)}</div>
+      <div>Desconto (${(parseFloat(pedidoAtual.descontoPct) || 0).toString().replace('.', ',')}%): - ${formatMoney(conta.desc)}</div>
+      <div>Frete: ${formatMoney(conta.frete)}</div>
+      <div style="font-size:1.15rem;font-weight:bold;">Total: ${formatMoney(conta.total)}</div>
+    </div>
     <h3 style="margin-top:1rem;">Adicionar itens</h3>
     <div class="filters">
       <div><label>Nome</label><input type="text" id="addItemNome" placeholder="Nome em inglês"></div>
@@ -2433,23 +2642,107 @@ function renderPedidoTabela() {
     </div>
     <label>Ou cole mais uma lista</label>
     <textarea id="addItemLista" placeholder="1 Sol Ring"></textarea>
-    <button class="secondary small" onclick="adicionarListaPedido()">Incluir lista</button>
-    <button class="secondary" style="margin-top:0.6rem;" onclick="imprimirOrcamento()">Imprimir Orçamento</button>`;
+    <div style="margin-top:0.6rem;">
+      <button class="secondary small" onclick="adicionarListaPedido()">Incluir lista</button>
+      <button class="primary small" onclick="salvarOrcamentoAtual(true)">Salvar</button>
+      <button class="secondary small" onclick="imprimirOrcamento()">Imprimir</button>
+      <button class="secondary small" onclick="exportarOrcamentoCsv()">CSV para importar</button>
+      <button class="secondary small" onclick="liberarPrecosOrcamento()">Alterar preços</button>
+      <button class="secondary small" onclick="aplicarDescontoOrcamento()">Aplicar desconto</button>
+      <button class="secondary small" onclick="adicionarFreteOrcamento()">Adicionar frete</button>
+    </div>`;
   document.getElementById('pedResultado').innerHTML = html;
   document.getElementById('pedResultado').style.display = 'block';
   document.getElementById('btnBaixa').style.display = 'inline-block';
 }
 
 function totalizarPedido() {
-  pedidoAtual.total = pedidoAtual.itens.reduce((s, x) => s + (x.encontrado ? (parseFloat(x.total) || 0) : 0), 0);
+  const conta = valoresPedido(pedidoAtual);
+  pedidoAtual.total = conta.total;
+}
+
+function pedirSenhaAdmin() {
+  const s = prompt('Senha de administrador');
+  if (s == null) return false;
+  if (s !== senhaAdmin) { alert('Senha incorreta.'); return false; }
+  return true;
+}
+
+function trocarSenhaAdmin() {
+  const atual = document.getElementById('cfgSenhaAtual').value;
+  const nova = document.getElementById('cfgSenhaNova').value;
+  if (atual !== senhaAdmin) { alert('Senha atual incorreta.'); return; }
+  if (!nova) { alert('Informe a nova senha.'); return; }
+  senhaAdmin = nova;
+  salvarConfig('senhaAdmin', nova).then(() => alert('Senha alterada.')).catch(() => alert('Senha alterada neste navegador, mas não consegui gravar no banco.'));
+}
+
+async function liberarPrecosOrcamento() {
+  if (!pedidoAtual) return;
+  if (!pedirSenhaAdmin()) return;
+  pedidoAtual.precosLiberados = true;
+  renderPedidoTabela();
+}
+
+function aplicarDescontoOrcamento() {
+  if (!pedidoAtual) return;
+  if (!pedirSenhaAdmin()) return;
+  const v = prompt('Desconto sobre o subtotal, em %. Exemplo: 10');
+  if (v == null) return;
+  pedidoAtual.descontoPct = parseFloat(String(v).replace('%', '').replace(',', '.')) || 0;
+  totalizarPedido();
+  renderPedidoTabela();
+}
+
+function adicionarFreteOrcamento() {
+  if (!pedidoAtual) return;
+  const v = prompt('Valor do frete (R$)');
+  if (v == null) return;
+  pedidoAtual.frete = parseMoney(v);
+  totalizarPedido();
+  renderPedidoTabela();
+}
+
+function exportarOrcamentoCsv() {
+  if (!pedidoAtual) return;
+  const cartas = pedidoAtual.itens.filter(it => it.encontrado).map(it => ({
+    qtd: it.qtd, nome: it.nome, nomePt: it.nomePt || '', set: it.set || '', setCode: it.setCode || '',
+    cond: it.cond || '', lang: it.lang || '', extras: it.extras || '', pasta: it.pasta || '',
+    ml: it.preco || 0, custo: it.preco || 0, pvs: it.preco || 0, desconto: 0, foil: /foil/i.test(it.extras || '')
+  }));
+  exportarGrupo(cartas, 'orcamento-' + (pedidoAtual.cliente || 'cliente'));
+}
+
+async function salvarOrcamentoAtual(avisar) {
+  if (!pedidoAtual) { alert('Não há orçamento aberto.'); return false; }
+  if (!pedidoAtual.id) pedidoAtual.id = 'orc_' + Date.now();
+  const listaEl = document.getElementById('pedLista');
+  if (listaEl) pedidoAtual.lista = listaEl.value;
+  totalizarPedido();
+  const limpo = limparPedido(pedidoAtual);
+  pedidoAtual.id = limpo.id;
+  const i = orcamentosSalvos.findIndex(o => o.id === limpo.id);
+  if (i >= 0) orcamentosSalvos[i] = limpo;
+  else orcamentosSalvos.unshift(limpo);
+  try {
+    await salvarOrcamentos();
+    renderOrcamentosSalvos();
+    if (avisar) alert('Orçamento salvo.');
+    return true;
+  } catch (e) {
+    alert('Não consegui salvar o orçamento no banco. ' + (e.message || ''));
+    return false;
+  }
 }
 
 function editarItemPedido(i, campo, valor) {
   const it = pedidoAtual.itens[i];
   if (!it) return;
   if (campo === 'qtd') it.qtd = parseInt(valor) || 1;
-  else if (campo === 'preco') it.preco = parseMoney(valor);
-  else it[campo] = valor;
+  else if (campo === 'preco') {
+    if (!pedidoAtual.precosLiberados) { alert('Use Alterar preços e informe a senha.'); renderPedidoTabela(); return; }
+    it.preco = parseMoney(valor);
+  } else it[campo] = valor;
   it.total = (parseFloat(it.qtd) || 0) * (parseFloat(it.preco) || 0);
   totalizarPedido();
   renderPedidoTabela();
@@ -2510,26 +2803,29 @@ function removerItemPedido(i) {
   renderPedidoTabela();
 }
 
-function imprimirOrcamento() {
+async function imprimirOrcamento() {
   if (!pedidoAtual) return;
+  await salvarOrcamentoAtual(false);
+  const conta = valoresPedido(pedidoAtual);
   const w = window.open('', '_blank');
+  if (!w) { alert('O navegador bloqueou a janela de impressão. O orçamento foi salvo mesmo assim.'); return; }
   let html = `<html><head><title>Orçamento</title><style>body{font-family:sans-serif;}table{border-collapse:collapse;width:100%;}th,td{border:1px solid #ccc;padding:6px;text-align:left;}th{background:#1a3a6b;color:white;}</style></head><body>
     <h2>Orçamento — ${pedidoAtual.cliente}</h2>
     <p>${pedidoAtual.titulo} | ${pedidoAtual.data}</p>
     <table><thead><tr><th>Qtd</th><th>Nome</th><th>Edição</th><th>Idioma</th><th>Estado</th><th>Unit.</th><th>Total</th></tr></thead><tbody>`;
   pedidoAtual.itens.forEach(it => {
-    if (it.encontrado) html += `<tr><td>${it.qtd}</td><td>${it.nome}</td><td>${it.set||'-'}</td><td>${it.lang}</td><td>${it.cond}</td><td>${formatMoney(it.preco)}</td><td>${formatMoney(it.total)}</td></tr>`;
+    if (it.encontrado) html += `<tr><td>${it.qtd}</td><td>${it.nome}</td><td>${it.set||'-'}</td><td>${it.lang}</td><td>${it.cond}</td><td>${formatMoney(it.preco)}</td><td>${formatMoney((it.qtd||0)*(it.preco||0))}</td></tr>`;
   });
-  html += `</tbody></table><h3>Total: ${formatMoney(pedidoAtual.total)}</h3></body></html>`;
+  html += `</tbody></table>
+    <p>Subtotal: ${formatMoney(conta.sub)}<br>Desconto (${pedidoAtual.descontoPct || 0}%): - ${formatMoney(conta.desc)}<br>Frete: ${formatMoney(conta.frete)}</p>
+    <h3>Total: ${formatMoney(conta.total)}</h3></body></html>`;
   w.document.write(html);
   w.document.close();
   w.print();
-
-  orcamentosSalvos.unshift(limparPedido(Object.assign({}, pedidoAtual, { lista: document.getElementById('pedLista').value })));
-  salvarOrcamentos();
   document.getElementById('pedLista').value = '';
   document.getElementById('pedResultado').style.display = 'none';
   document.getElementById('btnBaixa').style.display = 'none';
+  pedidoAtual = null;
   renderOrcamentosSalvos();
 }
 
@@ -2562,13 +2858,11 @@ function reabrirOrcamento(i) {
     it.alternativas = matches;
     it.cardRef = matches.find(c => (c.set || '') === (it.set || '') && (c.pasta || 'Geral') === (it.pasta || 'Geral')) || matches[0] || null;
   });
-  orcamentosSalvos.splice(i, 1);
-  salvarOrcamentos();
   renderPedidoTabela();
   renderOrcamentosSalvos();
 }
 
-function darBaixa() {
+async function darBaixa() {
   if (!pedidoAtual) return;
   if (!confirm('Confirmar baixa no estoque e registrar esta saída?')) return;
   seqSaida++;
@@ -2583,7 +2877,8 @@ function darBaixa() {
     }
   });
   pedidosHistorico.unshift(limparPedido(pedidoAtual));
-  salvarSaidas();
+  try { await salvarSaidas(); }
+  catch (e) { alert('A baixa foi feita no estoque, mas o histórico não gravou no banco. ' + (e.message || '')); }
   filtered = [...estoque];
   renderEstoque();
   renderPastas();
