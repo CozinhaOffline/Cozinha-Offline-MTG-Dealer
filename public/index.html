@@ -9,58 +9,61 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <style>
   :root {
-    --azul: #1e4a5f;
-    --vermelho: #c41e3a;
-    --azul-claro: #2d6a8a;
-    --dourado: #c9a227;
-    --fundo: #f4f1ea;
-    --card: #ffffff;
-    --texto: #1a1a1a;
-    --borda: #e0d8cc;
+    --azul: #9fd4ea;
+    --azul-botao: #1e4a5f;
+    --vermelho: #e85d72;
+    --azul-claro: #b7dceb;
+    --dourado: #e2c56a;
+    --fundo: #12161c;
+    --card: #1b2330;
+    --texto: #e7e4dc;
+    --borda: #314056;
+    --input: #121820;
   }
   * { box-sizing: border-box; }
   body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: var(--fundo); color: var(--texto); margin: 0; padding: 0; }
-  header { background: linear-gradient(135deg, #1a2a32, #2d3e4a); color: white; padding: 0.8rem 2rem; box-shadow: 0 2px 8px rgba(0,0,0,0.2); display: flex; align-items: center; gap: 1rem; }
+  header { background: linear-gradient(135deg, #0e141b, #1a2a32); color: white; padding: 0.8rem 2rem; box-shadow: 0 2px 8px rgba(0,0,0,0.35); display: flex; align-items: center; gap: 1rem; }
   header img { height: 70px; border-radius: 8px; }
   header h1 { margin: 0; font-size: 1.5rem; color: #f0e6c8; }
   header p { margin: 0.2rem 0 0; opacity: 0.85; font-size: 0.9rem; }
-  nav { background: white; border-bottom: 1px solid var(--borda); padding: 0 1rem; display: flex; gap: 0.5rem; flex-wrap: wrap; }
+  nav { background: var(--card); border-bottom: 1px solid var(--borda); padding: 0 1rem; display: flex; gap: 0.5rem; flex-wrap: wrap; }
   nav button { background: none; border: none; padding: 0.9rem 1.2rem; font-size: 0.95rem; cursor: pointer; color: var(--azul); border-bottom: 3px solid transparent; }
   nav button.active { border-bottom-color: var(--vermelho); font-weight: 600; color: var(--vermelho); }
   main { padding: 1.5rem 2rem; max-width: 1600px; margin: 0 auto; }
   .tab { display: none; }
   .tab.active { display: block; }
-  .card { background: var(--card); border-radius: 10px; padding: 1.5rem; margin-bottom: 1.5rem; box-shadow: 0 1px 4px rgba(0,0,0,0.08); border: 1px solid var(--borda); }
+  .card { background: var(--card); border-radius: 10px; padding: 1.5rem; margin-bottom: 1.5rem; box-shadow: 0 1px 4px rgba(0,0,0,0.25); border: 1px solid var(--borda); }
   h2 { margin-top: 0; color: var(--azul); }
   h3 { color: var(--azul-claro); }
   label { display: block; margin: 0.6rem 0 0.3rem; font-weight: 500; }
   input, select, textarea, button { font-family: inherit; font-size: 0.95rem; }
-  input[type="text"], input[type="number"], select, textarea { width: 100%; padding: 0.6rem 0.8rem; border: 1px solid var(--borda); border-radius: 6px; background: white; }
+  input[type="text"], input[type="number"], input[type="password"], select, textarea { width: 100%; padding: 0.6rem 0.8rem; border: 1px solid var(--borda); border-radius: 6px; background: var(--input); color: var(--texto); }
   textarea { min-height: 100px; resize: vertical; }
+  ::placeholder { color: #8b95a3; }
   button.primary, button.secondary { padding: 0.65rem 1.2rem; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; margin-top: 0.4rem; margin-right: 0.4rem; }
   button.primary { background: var(--vermelho); color: white; }
-  button.primary:hover { background: #a31830; }
-  button.secondary { background: var(--azul); color: white; }
-  button.secondary:hover { background: #152e55; }
+  button.primary:hover { background: #c43d54; }
+  button.secondary { background: var(--azul-botao); color: white; }
+  button.secondary:hover { background: #16384a; }
   button.small { padding: 0.35rem 0.7rem; font-size: 0.85rem; }
   table { width: 100%; border-collapse: collapse; margin-top: 1rem; font-size: 0.85rem; }
   th, td { padding: 0.45rem 0.5rem; text-align: left; border-bottom: 1px solid var(--borda); vertical-align: middle; }
-  th { background: #f0f4fa; color: var(--azul); font-weight: 600; position: sticky; top: 0; }
-  tr:hover { background: #fafbfc; }
+  th { background: #243044; color: var(--azul); font-weight: 600; position: sticky; top: 0; }
+  tr:hover { background: #243044; }
   .badge { display: inline-block; padding: 0.12rem 0.45rem; border-radius: 4px; font-size: 0.72rem; font-weight: 700; color: white; }
   .badge.A { background: #16a34a; }
   .badge.B { background: #ca8a04; }
   .badge.C { background: #ea580c; }
   .badge.D { background: #6b7280; }
-  .alert { padding: 0.8rem 1rem; border-radius: 6px; margin: 1rem 0; background: #eff6ff; border-left: 4px solid var(--azul); }
+  .alert { padding: 0.8rem 1rem; border-radius: 6px; margin: 1rem 0; background: #1a2836; border-left: 4px solid var(--azul); color: var(--texto); }
   .filters { display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: end; margin-bottom: 1rem; }
   .filters > div { flex: 1; min-width: 140px; }
   .filters input, .filters select { margin: 0; }
-  .edit-input { width: 100%; padding: 0.3rem 0.4rem; font-size: 0.82rem; }
+  .edit-input { width: 100%; padding: 0.3rem 0.4rem; font-size: 0.82rem; background: var(--input); color: var(--texto); border: 1px solid var(--borda); }
   .stats { display: flex; gap: 1rem; flex-wrap: wrap; margin: 1rem 0; }
-  .stat { background: #f0f4fa; padding: 0.8rem 1rem; border-radius: 8px; min-width: 120px; text-align: center; }
+  .stat { background: #243044; padding: 0.8rem 1rem; border-radius: 8px; min-width: 120px; text-align: center; }
   .stat strong { display: block; font-size: 1.3rem; color: var(--azul); }
-  .muted { color: #666; font-size: 0.85rem; }
+  .muted { color: #aeb6c2; font-size: 0.85rem; }
   .row { display: flex; gap: 1rem; flex-wrap: wrap; }
   .col { flex: 1; min-width: 220px; }
   .checkbox-col { width: 36px; text-align: center; }
@@ -69,8 +72,8 @@
   #estoqueTable th, #estoqueTable td { padding: 0.3rem 0.35rem; font-size: 0.8rem; }
   #estoqueTable input.edit-input { width: 70px; padding: 0.2rem 0.3rem; font-size: 0.78rem; }
   .card-popup {
-    position: fixed; background: white; border: 1px solid var(--borda); border-radius: 10px; padding: 0.8rem;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.18); z-index: 2000; width: 340px; max-height: 80vh; overflow-y: auto;
+    position: fixed; background: var(--card); color: var(--texto); border: 1px solid var(--borda); border-radius: 10px; padding: 0.8rem;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4); z-index: 2000; width: 340px; max-height: 80vh; overflow-y: auto;
     display: none; pointer-events: none; box-sizing: border-box;
   }
   .card-popup img { width: 100%; max-height: 380px; object-fit: contain; border-radius: 6px; margin-bottom: 0.5rem; }
@@ -78,13 +81,13 @@
   .topbar { position: sticky; top: 0; z-index: 500; }
   .estoque-resumo {
     position: fixed; top: 118px; right: 16px; width: 250px; z-index: 40;
-    background: white; border: 1px solid var(--borda); border-radius: 10px;
-    padding: 0.8rem 0.9rem; box-shadow: 0 2px 8px rgba(0,0,0,0.08); font-size: 0.82rem;
+    background: var(--card); color: var(--texto); border: 1px solid var(--borda); border-radius: 10px;
+    padding: 0.8rem 0.9rem; box-shadow: 0 2px 8px rgba(0,0,0,0.3); font-size: 0.82rem;
   }
   .estoque-resumo strong { color: var(--azul); }
   #estoque { padding-right: 270px; }
   .pasta-dots {
-    position: absolute; top: 6px; right: 6px; border: none; background: rgba(255,255,255,0.85);
+    position: absolute; top: 6px; right: 6px; border: none; background: rgba(18,22,28,0.85); color: var(--texto);
     border-radius: 6px; cursor: pointer; font-size: 1.2rem; line-height: 1; padding: 0.15rem 0.35rem;
   }
   @media (max-width: 1100px) {
@@ -99,7 +102,7 @@
   <img src="logo.png" alt="Cozinha Offline Store">
   <div>
     <h1>Cozinha Offline Store</h1>
-    <p>Gestão de estoque, pedidos e orçamentos · versão 26/10-5</p>
+    <p>Gestão de estoque, pedidos e orçamentos · versão 27/10</p>
   </div>
 </header>
 <nav>
@@ -322,11 +325,23 @@
       <div id="pedResultado" style="display:none;margin-top:1rem;"></div>
       <button class="primary" id="btnBaixa" style="display:none;" onclick="darBaixa()">Dar baixa e registrar saída</button>
     </div>
+    <div class="card" id="listaOrcamentos">
+      <h2>Orçamentos salvos</h2>
+      <div id="orcamentosLista"></div>
+    </div>
     <div class="card">
       <h2>Histórico de saídas</h2>
+      <div class="filters">
+        <div><label>Código</label><input type="text" id="filtroCodSaida" list="listaCodigosSaida" placeholder="GIV0001" oninput="renderHistorico()"></div>
+        <div><label>Cliente</label><input type="text" id="filtroCliSaida" list="listaClientesSaida" placeholder="Nome do cliente" oninput="renderHistorico()"></div>
+        <div style="align-self:end;"><button class="secondary small" type="button" onclick="limparFiltroSaidas()">Limpar filtros</button></div>
+      </div>
+      <datalist id="listaCodigosSaida"></datalist>
+      <datalist id="listaClientesSaida"></datalist>
       <div id="historicoSaidas"></div>
     </div>
   </div>
+  <div id="custos" class="tab">
     <div class="card">
       <h2>Calcular custo de aquisição de um lote</h2>
       <div class="row">
@@ -1661,8 +1676,8 @@ function renderPastas() {
     const active = window.pastaAtiva === p ? 'border:2px solid var(--vermelho);' : 'border:1px solid var(--borda);';
     const img = pastasMeta[p] && pastasMeta[p].imagem;
     const bg = img
-      ? `background-image:linear-gradient(rgba(248,250,252,0.75),rgba(248,250,252,0.75)),url('${img}');background-size:cover;background-position:center;`
-      : 'background:#f8fafc;';
+      ? `background-image:linear-gradient(rgba(18,22,28,0.75),rgba(18,22,28,0.75)),url('${img}');background-size:cover;background-position:center;`
+      : 'background:#1b2330;';
     return `<div onclick="filtrarPorPasta(${i})" style="position:relative;display:inline-block;width:200px;margin:0.4rem;padding:1rem;border-radius:10px;cursor:pointer;${active}${bg}">
       <button class="pasta-dots" title="Opções" onclick="event.stopPropagation();abrirMenuPasta(event, ${i})">⋯</button>
       <div style="font-weight:600;color:var(--azul);padding-right:1.2rem;">${esc(p)}</div>
@@ -2599,7 +2614,7 @@ function cruzarPedido() {
     const qtd = Math.min(qtdPedida, card.qtd);
     const sub = qtd * card.pvs;
     total += sub;
-    itens.push({ qtd, nome: card.nome, set: card.set, lang: card.lang, cond: card.cond, extras: card.extras, preco: card.pvs, total: sub, encontrado: true, pasta: card.pasta || 'Geral', cardRef: card, alternativas: matches });
+    itens.push({ qtd, nome: card.nome, set: card.set, setCode: card.setCode || '', lang: card.lang, cond: card.cond, extras: card.extras, preco: card.pvs, total: sub, encontrado: true, pasta: card.pasta || 'Geral', cardRef: card, alternativas: matches });
   });
   pedidoAtual = {
     id: 'orc_' + Date.now(),
@@ -2624,12 +2639,12 @@ function renderPedidoTabela() {
   html += '<table><thead><tr><th>Qtd</th><th>Nome</th><th>Edição</th><th>Pasta</th><th>Idioma</th><th>Estado</th><th>Preço</th><th>Total</th><th></th></tr></thead><tbody>';
   pedidoAtual.itens.forEach((it, i) => {
     if (!it.encontrado) {
-      html += `<tr><td><input class="edit-input" value="${it.qtd || 1}" onchange="editarItemPedido(${i},'qtd',this.value)"></td><td colspan="6" style="color:#c41e3a">${esc(it.nome)} — não encontrado</td><td></td><td><button class="secondary small" style="background:#c41e3a;" onclick="removerItemPedido(${i})">×</button></td></tr>`;
+      html += `<tr><td><input class="edit-input" value="${it.qtd || 1}" onchange="editarItemPedido(${i},'qtd',this.value)"></td><td colspan="6" class="card-name" data-nome="${esc(it.nome)}" style="color:#e85d72">${esc(it.nome)} — não encontrado</td><td></td><td><button class="secondary small" style="background:#c41e3a;" onclick="removerItemPedido(${i})">×</button></td></tr>`;
     } else {
-      const alts = (it.alternativas || []).map((a, ai) => `<option value="${ai}" ${a === it.cardRef ? 'selected' : ''}>${esc(a.set || '-')} (${esc(a.pasta || 'Geral')})</option>`).join('');
+      const alts = (it.alternativas || []).map((a, ai) => `<option value="${ai}" ${a === it.cardRef ? 'selected' : ''}>${esc(a.set || '-')} · ${esc(a.pasta || 'Geral')} · ${formatMoney(a.pvs)}</option>`).join('');
       html += `<tr>
         <td><input class="edit-input" value="${it.qtd}" onchange="editarItemPedido(${i},'qtd',this.value)"></td>
-        <td>${esc(it.nome)}</td>
+        <td class="card-name" data-nome="${esc(it.nome)}" data-set="${esc(it.setCode || '')}">${esc(it.nome)}</td>
         <td><select onchange="trocarVersao(${i}, this.value)">${alts}</select></td>
         <td>${esc(it.pasta || '-')}</td>
         <td><input class="edit-input" value="${esc(it.lang || '')}" onchange="editarItemPedido(${i},'lang',this.value)"></td>
@@ -2664,6 +2679,8 @@ function renderPedidoTabela() {
       <button class="secondary small" onclick="liberarPrecosOrcamento()">Alterar preços</button>
       <button class="secondary small" onclick="aplicarDescontoOrcamento()">Aplicar desconto</button>
       <button class="secondary small" onclick="adicionarFreteOrcamento()">Adicionar frete</button>
+      <button class="secondary small" onclick="fecharOrcamento()">Fechar</button>
+      <button class="secondary small" style="background:#c41e3a;" onclick="excluirOrcamento()">Excluir</button>
     </div>`;
   document.getElementById('pedResultado').innerHTML = html;
   document.getElementById('pedResultado').style.display = 'block';
@@ -2768,7 +2785,7 @@ function itemDeCarta(nome, qtdPedida) {
   matches.sort((a, b) => b.pvs - a.pvs);
   const card = matches[0];
   const qtd = Math.min(qtdPedida, card.qtd);
-  return { qtd, nome: card.nome, set: card.set, lang: card.lang, cond: card.cond, extras: card.extras, preco: card.pvs, total: qtd * card.pvs, encontrado: true, pasta: card.pasta || 'Geral', cardRef: card, alternativas: matches };
+  return { qtd, nome: card.nome, set: card.set, setCode: card.setCode || '', lang: card.lang, cond: card.cond, extras: card.extras, preco: card.pvs, total: qtd * card.pvs, encontrado: true, pasta: card.pasta || 'Geral', cardRef: card, alternativas: matches };
 }
 
 function adicionarItemPedidoManual() {
@@ -2801,6 +2818,7 @@ function trocarVersao(idx, altIdx) {
   if (!nova) return;
   it.cardRef = nova;
   it.set = nova.set;
+  it.setCode = nova.setCode || '';
   it.lang = nova.lang;
   it.cond = nova.cond;
   it.extras = nova.extras;
@@ -2843,19 +2861,47 @@ async function imprimirOrcamento() {
   renderOrcamentosSalvos();
 }
 
+function formatarQuando(v) {
+  if (!v) return '';
+  const d = new Date(v);
+  if (!isNaN(d.getTime())) return d.toLocaleString('pt-BR');
+  return String(v);
+}
+
+function fecharOrcamento() {
+  pedidoAtual = null;
+  const r = document.getElementById('pedResultado');
+  if (r) { r.style.display = 'none'; r.innerHTML = ''; }
+  const b = document.getElementById('btnBaixa');
+  if (b) b.style.display = 'none';
+  const lista = document.getElementById('pedLista');
+  if (lista) lista.value = '';
+}
+
+async function excluirOrcamento(i) {
+  let o = null;
+  if (typeof i === 'number') o = orcamentosSalvos[i];
+  else if (pedidoAtual) o = orcamentosSalvos.find(x => x.id === pedidoAtual.id) || pedidoAtual;
+  if (!o) { fecharOrcamento(); return; }
+  if (!confirm('Excluir o orçamento de ' + (o.cliente || 'cliente') + ' — ' + (o.titulo || 'sem título') + '?')) return;
+  if (o.id) orcamentosSalvos = orcamentosSalvos.filter(x => x.id !== o.id);
+  else orcamentosSalvos.splice(i, 1);
+  if (pedidoAtual && (!o.id || pedidoAtual.id === o.id)) fecharOrcamento();
+  try { await salvarOrcamentos(); }
+  catch (e) { alert('Não consegui apagar o orçamento no banco.'); }
+  renderOrcamentosSalvos();
+}
+
 function renderOrcamentosSalvos() {
-  let el = document.getElementById('listaOrcamentos');
-  if (!el) {
-    el = document.createElement('div');
-    el.id = 'listaOrcamentos';
-    el.className = 'card';
-    el.innerHTML = '<h2>Orçamentos salvos</h2><div id="orcamentosLista"></div>';
-    document.getElementById('pedidos').appendChild(el);
-  }
   const cont = document.getElementById('orcamentosLista');
+  if (!cont) return;
   cont.innerHTML = orcamentosSalvos.map((o, i) => `
-    <div style="padding:0.4rem 0;border-bottom:1px solid var(--borda);cursor:pointer;" onclick="reabrirOrcamento(${i})">
-      <strong>${o.cliente}</strong> — ${o.titulo}
+    <div style="padding:0.45rem 0;border-bottom:1px solid var(--borda);display:flex;justify-content:space-between;gap:0.6rem;align-items:center;">
+      <div style="cursor:pointer;" onclick="reabrirOrcamento(${i})">
+        <strong>${esc(o.cliente || 'Cliente')}</strong> — ${esc(o.titulo || 'Sem título')}
+        <div class="muted">Atualizado em ${esc(formatarQuando(o.atualizado || o.data))}</div>
+      </div>
+      <button class="secondary small" style="background:#c41e3a;" onclick="excluirOrcamento(${i})">Excluir</button>
     </div>
   `).join('') || '<p class="muted">Nenhum orçamento salvo.</p>';
 }
@@ -2903,13 +2949,35 @@ async function darBaixa() {
   alert(`Baixa registrada. Código: ${codigo}`);
 }
 
+function limparFiltroSaidas() {
+  const c = document.getElementById('filtroCodSaida');
+  const n = document.getElementById('filtroCliSaida');
+  if (c) c.value = '';
+  if (n) n.value = '';
+  renderHistorico();
+}
+
 function renderHistorico() {
   const el = document.getElementById('historicoSaidas');
   if (!el) return;
-  if (!pedidosHistorico.length) { el.innerHTML = '<p class="muted">Nenhuma saída registrada.</p>'; return; }
-  el.innerHTML = pedidosHistorico.map((p, i) => `
+  const codigos = [...new Set(pedidosHistorico.map(p => p.codigo).filter(Boolean))];
+  const clientes = [...new Set(pedidosHistorico.map(p => p.cliente).filter(Boolean))];
+  const dlC = document.getElementById('listaCodigosSaida');
+  const dlN = document.getElementById('listaClientesSaida');
+  if (dlC) dlC.innerHTML = codigos.map(c => `<option value="${esc(c)}"></option>`).join('');
+  if (dlN) dlN.innerHTML = clientes.map(c => `<option value="${esc(c)}"></option>`).join('');
+  const cod = (document.getElementById('filtroCodSaida')?.value || '').trim().toLowerCase();
+  const cli = (document.getElementById('filtroCliSaida')?.value || '').trim().toLowerCase();
+  const lista = pedidosHistorico.map((p, i) => ({ p, i })).filter(({ p }) => {
+    if (cod && !String(p.codigo || '').toLowerCase().includes(cod)) return false;
+    if (cli && !String(p.cliente || '').toLowerCase().includes(cli)) return false;
+    return true;
+  });
+  if (!lista.length) { el.innerHTML = '<p class="muted">Nenhuma saída registrada.</p>'; return; }
+  el.innerHTML = lista.map(({ p, i }) => `
     <div style="border-bottom:1px solid var(--borda);padding:0.6rem 0;">
-      <strong>${p.codigo || '-'}</strong> — ${p.cliente} (${p.titulo})
+      <strong>${esc(p.codigo || '-')}</strong> — ${esc(p.cliente)} (${esc(p.titulo)})
+      <div class="muted">${esc(formatarQuando(p.data || p.atualizado))}</div>
       <button class="secondary small" onclick="visualizarSaida(${i})">Visualizar saída</button>
     </div>
   `).join('');
