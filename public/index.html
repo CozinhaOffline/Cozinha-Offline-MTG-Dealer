@@ -102,7 +102,7 @@
   <img src="logo.png" alt="Cozinha Offline Store">
   <div>
     <h1>Cozinha Offline Store</h1>
-    <p>Gestão de estoque, pedidos e orçamentos · versão 27/10</p>
+    <p>Gestão de estoque, pedidos e orçamentos · versão 28/10</p>
   </div>
 </header>
 <nav>
@@ -272,7 +272,7 @@
 
   <!-- Modal de pré-importação -->
   <div id="importModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:2000;overflow:auto;">
-    <div id="modalBox" style="background:white;margin:1rem auto;max-width:95vw;width:1400px;border-radius:12px;padding:1.5rem;resize:both;overflow:auto;min-width:800px;min-height:400px;">
+    <div id="modalBox" style="background:var(--card);color:var(--texto);margin:1rem auto;max-width:95vw;width:1400px;border-radius:12px;padding:1.5rem;resize:both;overflow:auto;min-width:800px;min-height:400px;">
       <h2>Revisar importação</h2>
       <p class="muted">Arraste a borda inferior direita para redimensionar. Edite campos ou use a edição em massa abaixo.</p>
       <div class="filters" style="margin-bottom:0.8rem;">
@@ -451,7 +451,7 @@
     </div>
   </div>
 </main>
-<div id="menuPasta" style="display:none;position:fixed;z-index:600;background:white;border:1px solid #e0d8cc;border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,.15);min-width:210px;padding:0.35rem;">
+<div id="menuPasta" style="display:none;position:fixed;z-index:600;background:var(--card);color:var(--texto);border:1px solid var(--borda);border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,.35);min-width:210px;padding:0.35rem;">
   <button class="secondary small" style="display:block;width:100%;margin:0.2rem 0;" onclick="acaoMenuPasta('editar')">Editar</button>
   <button class="secondary small" id="menuPastaExcluir" style="display:block;width:100%;margin:0.2rem 0;background:#c41e3a;" onclick="acaoMenuPasta('excluir')">Excluir</button>
   <button class="secondary small" style="display:block;width:100%;margin:0.2rem 0;" onclick="acaoMenuPasta('csv')">CSV para importar</button>
@@ -493,9 +493,7 @@ async function carregarEstoqueServidor() {
       }));
       const mudou = aplicarClasseANoEstoque();
       filtered = [...estoque];
-      pastas = [...new Set(estoque.map(c => c.pasta || 'Geral'))];
-      if (!pastas.includes('Geral')) pastas.unshift('Geral');
-      Object.keys(pastasMeta).forEach(n => { if (n && !pastas.includes(n)) pastas.push(n); });
+      montarPastas();
       renderPastas();
       aplicarFiltros();
     }
@@ -1602,13 +1600,31 @@ function cancelarImportacao() {
 }
 
 let pastas = ['Geral'];
+let pastasSalvas = null;
+
+function montarPastas() {
+  const nomes = new Set(['Geral']);
+  if (Array.isArray(estoque)) estoque.forEach(c => nomes.add((c && c.pasta) || 'Geral'));
+  if (Array.isArray(pastasSalvas)) pastasSalvas.forEach(n => { if (n) nomes.add(n); });
+  else Object.keys(pastasMeta || {}).forEach(n => { if (n) nomes.add(n); });
+  pastas = ['Geral', ...[...nomes].filter(n => n !== 'Geral')];
+}
+
+function salvarListaPastas() {
+  pastasSalvas = pastas.slice();
+  try { localStorage.setItem('pastas-lista', JSON.stringify(pastasSalvas)); } catch (e) {}
+  return salvarConfig('pastas-lista', pastasSalvas);
+}
 
 function criarPasta() {
   const nome = document.getElementById('novaPasta').value.trim();
   if (!nome) return;
   if (pastas.includes(nome)) { alert('Pasta já existe.'); return; }
   pastas.push(nome);
+  if (!pastasMeta[nome]) pastasMeta[nome] = {};
   document.getElementById('novaPasta').value = '';
+  salvarPastasMeta();
+  salvarListaPastas();
   renderPastas();
 }
 
@@ -1625,9 +1641,12 @@ function excluirPasta(i) {
   } else return;
   pastas = pastas.filter(p => p !== nome);
   if (window.pastaAtiva === nome) window.pastaAtiva = '';
+  delete pastasMeta[nome];
   renderPastas();
   aplicarFiltros();
   salvarEstoqueServidor(true);
+  salvarPastasMeta();
+  salvarListaPastas().catch(() => alert('A pasta sumiu da tela, mas não consegui gravar a exclusão. Não recarregue a página e tente excluir de novo.'));
 }
 
 function excluirSelecionados() {
@@ -1855,7 +1874,15 @@ async function carregarPastasMeta() {
       }
     }
   } catch (e) {}
-  Object.keys(pastasMeta).forEach(n => { if (n && !pastas.includes(n)) pastas.push(n); });
+  try {
+    const localLista = JSON.parse(localStorage.getItem('pastas-lista') || 'null');
+    if (Array.isArray(localLista)) pastasSalvas = localLista;
+  } catch (e) {}
+  try {
+    const lista = await lerConfig('pastas-lista');
+    if (Array.isArray(lista)) pastasSalvas = lista;
+  } catch (e) {}
+  montarPastas();
 }
 
 function editarPasta(i) {
@@ -1866,7 +1893,7 @@ function editarPasta(i) {
     modal = document.createElement('div');
     modal.id = 'modalPasta';
     modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:4000;';
-    modal.innerHTML = `<div style="background:white;margin:10vh auto;max-width:420px;border-radius:12px;padding:1.2rem;">
+    modal.innerHTML = `<div style="background:var(--card);color:var(--texto);margin:10vh auto;max-width:420px;border-radius:12px;padding:1.2rem;">
       <h3>Editar pasta</h3>
       <label>Nome</label><input type="text" id="editPastaNome">
       <label>Imagem de fundo</label><input type="file" id="editPastaImg" accept="image/*">
@@ -1907,6 +1934,7 @@ function editarPasta(i) {
         pastasMeta[nome] = meta;
       }
       salvarPastasMeta();
+      salvarListaPastas();
       renderPastas();
       aplicarFiltros();
       modal.style.display = 'none';
@@ -1995,7 +2023,7 @@ async function atualizarML() {
 
   const progressDiv = document.createElement('div');
   progressDiv.id = 'mlProgress';
-  progressDiv.style.cssText = 'position:fixed;top:20px;right:20px;background:white;border:1px solid #ccc;padding:1rem;border-radius:8px;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,0.15);min-width:240px;';
+  progressDiv.style.cssText = 'position:fixed;top:20px;right:20px;background:var(--card);color:var(--texto);border:1px solid var(--borda);padding:1rem;border-radius:8px;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,0.35);min-width:240px;';
   progressDiv.innerHTML = '<strong>Atualizando ML...</strong><br><progress id="mlBar" value="0" max="100" style="width:100%;margin:0.5rem 0;"></progress><div id="mlStatus">Iniciando...</div>';
   document.body.appendChild(progressDiv);
 
@@ -2496,6 +2524,8 @@ function limparPedido(p) {
     codigo: p.codigo || null,
     lista: p.lista || '',
     atualizado: new Date().toISOString(),
+    reservado: !!p.reservado,
+    tagReserva: p.tagReserva || '',
     itens: (p.itens || []).map(i => ({
       qtd: i.qtd, nome: i.nome, nomePt: i.nomePt || '', set: i.set || '', setCode: i.setCode || '',
       lang: i.lang, cond: i.cond, extras: i.extras, preco: i.preco, total: i.total,
@@ -2594,39 +2624,68 @@ async function carregarRegistros() {
   }
 }
 
+function normNome(s) {
+  return String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
+}
+
+function lerLinhaLista(linha) {
+  let s = String(linha || '').trim();
+  const m = s.match(/^(\d+)\s*[xX]?\s+(.+)$/);
+  const qtd = m ? (parseInt(m[1], 10) || 1) : 1;
+  s = (m ? m[2] : s).trim();
+  s = s.replace(/\s*\([^)]*\)\s*$/, '').trim();
+  return { qtd, nome: s };
+}
+
+function buscarNoEstoque(nome) {
+  const n = normNome(nome);
+  if (!n || !Array.isArray(estoque)) return [];
+  const exatos = [];
+  const parciais = [];
+  estoque.forEach(c => {
+    if (!(parseFloat(c.qtd) > 0)) return;
+    const en = normNome(c.nome);
+    const pt = normNome(c.nomePt);
+    if (!en && !pt) return;
+    if (en === n || pt === n) exatos.push(c);
+    else if ((en && (en.includes(n) || n.includes(en))) || (pt && (pt.includes(n) || n.includes(pt)))) parciais.push(c);
+  });
+  return exatos.length ? exatos : parciais;
+}
+
 function cruzarPedido() {
   const texto = document.getElementById('pedLista').value.trim();
   if (!texto) { alert('Cole a lista do cliente.'); return; }
+  if (!Array.isArray(estoque) || !estoque.length) { alert('O estoque ainda não carregou. Espere a página terminar de abrir e tente de novo.'); return; }
   const linhas = texto.split('\n').map(l => l.trim()).filter(Boolean);
   const itens = [];
-  let total = 0;
   linhas.forEach(linha => {
-    const m = linha.match(/^(\d+)\s+(.+)$/);
-    const qtdPedida = m ? parseInt(m[1]) : 1;
-    const nome = (m ? m[2] : linha).trim();
-    const matches = estoque.filter(c => c.nome.toLowerCase().includes(nome.toLowerCase()) && c.qtd > 0);
+    const lido = lerLinhaLista(linha);
+    const matches = buscarNoEstoque(lido.nome);
     if (!matches.length) {
-      itens.push({ nome, qtd: qtdPedida, encontrado: false, pasta: '-' });
+      itens.push({ nome: lido.nome, qtd: lido.qtd, encontrado: false, pasta: '-' });
       return;
     }
-    matches.sort((a, b) => b.pvs - a.pvs);
+    matches.sort((a, b) => (parseFloat(b.pvs) || 0) - (parseFloat(a.pvs) || 0));
     const card = matches[0];
-    const qtd = Math.min(qtdPedida, card.qtd);
-    const sub = qtd * card.pvs;
-    total += sub;
-    itens.push({ qtd, nome: card.nome, set: card.set, setCode: card.setCode || '', lang: card.lang, cond: card.cond, extras: card.extras, preco: card.pvs, total: sub, encontrado: true, pasta: card.pasta || 'Geral', cardRef: card, alternativas: matches });
+    const qtd = Math.min(lido.qtd, parseFloat(card.qtd) || 0);
+    const sub = qtd * (parseFloat(card.pvs) || 0);
+    itens.push({ qtd, nome: card.nome, nomePt: card.nomePt || '', set: card.set, setCode: card.setCode || '', lang: card.lang, cond: card.cond, extras: card.extras, obs: card.obs || '', preco: card.pvs, total: sub, encontrado: true, pasta: card.pasta || 'Geral', cardRef: card, alternativas: matches });
   });
   pedidoAtual = {
     id: 'orc_' + Date.now(),
     cliente: document.getElementById('pedCliente').value || 'Cliente',
     titulo: document.getElementById('pedTitulo').value || 'Pedido',
-    itens, total,
+    itens,
+    total: 0,
     descontoPct: 0,
     frete: 0,
     precosLiberados: false,
+    reservado: false,
     data: new Date().toLocaleString('pt-BR'),
     codigo: null
   };
+  totalizarPedido();
   renderPedidoTabela();
 }
 
@@ -2641,7 +2700,10 @@ function renderPedidoTabela() {
     if (!it.encontrado) {
       html += `<tr><td><input class="edit-input" value="${it.qtd || 1}" onchange="editarItemPedido(${i},'qtd',this.value)"></td><td colspan="6" class="card-name" data-nome="${esc(it.nome)}" style="color:#e85d72">${esc(it.nome)} — não encontrado</td><td></td><td><button class="secondary small" style="background:#c41e3a;" onclick="removerItemPedido(${i})">×</button></td></tr>`;
     } else {
-      const alts = (it.alternativas || []).map((a, ai) => `<option value="${ai}" ${a === it.cardRef ? 'selected' : ''}>${esc(a.set || '-')} · ${esc(a.pasta || 'Geral')} · ${formatMoney(a.pvs)}</option>`).join('');
+      const alts = (it.alternativas || []).map((a, ai) => {
+        const obs = String(a.obs || '').trim();
+        return `<option value="${ai}" ${a === it.cardRef ? 'selected' : ''}>${esc(a.set || '-')} · ${esc(a.pasta || 'Geral')} · ${formatMoney(a.pvs)}${obs ? ' [' + esc(obs) + ']' : ''}</option>`;
+      }).join('');
       html += `<tr>
         <td><input class="edit-input" value="${it.qtd}" onchange="editarItemPedido(${i},'qtd',this.value)"></td>
         <td class="card-name" data-nome="${esc(it.nome)}" data-set="${esc(it.setCode || '')}">${esc(it.nome)}</td>
@@ -2681,6 +2743,9 @@ function renderPedidoTabela() {
       <button class="secondary small" onclick="adicionarFreteOrcamento()">Adicionar frete</button>
       <button class="secondary small" onclick="fecharOrcamento()">Fechar</button>
       <button class="secondary small" style="background:#c41e3a;" onclick="excluirOrcamento()">Excluir</button>
+      <button class="secondary small" onclick="reservarLista()">Reservar lista</button>
+      ${pedidoAtual.reservado ? '<button class="secondary small" onclick="desfazerReserva()">Desfazer reserva</button>' : ''}
+      <button class="secondary small" onclick="separarLista()">Separar lista</button>
     </div>`;
   document.getElementById('pedResultado').innerHTML = html;
   document.getElementById('pedResultado').style.display = 'block';
@@ -2780,12 +2845,12 @@ function editarItemPedido(i, campo, valor) {
 }
 
 function itemDeCarta(nome, qtdPedida) {
-  const matches = estoque.filter(c => c.nome.toLowerCase().includes(nome.toLowerCase()) && c.qtd > 0);
+  const matches = buscarNoEstoque(nome);
   if (!matches.length) return { nome, qtd: qtdPedida, encontrado: false, pasta: '-' };
-  matches.sort((a, b) => b.pvs - a.pvs);
+  matches.sort((a, b) => (parseFloat(b.pvs) || 0) - (parseFloat(a.pvs) || 0));
   const card = matches[0];
-  const qtd = Math.min(qtdPedida, card.qtd);
-  return { qtd, nome: card.nome, set: card.set, setCode: card.setCode || '', lang: card.lang, cond: card.cond, extras: card.extras, preco: card.pvs, total: qtd * card.pvs, encontrado: true, pasta: card.pasta || 'Geral', cardRef: card, alternativas: matches };
+  const qtd = Math.min(qtdPedida, parseFloat(card.qtd) || 0);
+  return { qtd, nome: card.nome, nomePt: card.nomePt || '', set: card.set, setCode: card.setCode || '', lang: card.lang, cond: card.cond, extras: card.extras, obs: card.obs || '', preco: card.pvs, total: qtd * (parseFloat(card.pvs) || 0), encontrado: true, pasta: card.pasta || 'Geral', cardRef: card, alternativas: matches };
 }
 
 function adicionarItemPedidoManual() {
@@ -2892,13 +2957,94 @@ async function excluirOrcamento(i) {
   renderOrcamentosSalvos();
 }
 
+function tagReservaDe(p) {
+  return p.tagReserva || ('RESERVADO [' + (p.titulo || 'Orçamento') + ']');
+}
+
+function reservarLista() {
+  if (!pedidoAtual) { alert('Gere um orçamento primeiro.'); return; }
+  const titulo = pedidoAtual.titulo || 'Orçamento';
+  if (!confirm('Reservar a lista "' + titulo + '"? A tag será gravada no OBS de cada carta.')) return;
+  const tag = 'RESERVADO [' + titulo + ']';
+  let n = 0;
+  pedidoAtual.itens.forEach(it => {
+    const card = it.cardRef;
+    if (!it.encontrado || !card) return;
+    const obs = String(card.obs || '');
+    if (!obs.includes(tag)) card.obs = (obs ? obs.replace(/\s+$/, '') + ' ' : '') + tag;
+    it.obs = card.obs;
+    n++;
+  });
+  pedidoAtual.reservado = true;
+  pedidoAtual.tagReserva = tag;
+  salvarOrcamentoAtual(false);
+  salvarEstoqueServidor();
+  renderPedidoTabela();
+  renderOrcamentosSalvos();
+  alert('Reserva gravada em ' + n + ' carta(s).');
+}
+
+function desfazerReserva() {
+  if (!pedidoAtual) return;
+  if (!confirm('Desfazer a reserva e remover as tags deste orçamento?')) return;
+  const tag = tagReservaDe(pedidoAtual);
+  estoque.forEach(c => {
+    if (!c.obs || !String(c.obs).includes(tag)) return;
+    c.obs = String(c.obs).split(tag).join('').replace(/\s{2,}/g, ' ').trim();
+  });
+  pedidoAtual.itens.forEach(it => { if (it.cardRef) it.obs = it.cardRef.obs || ''; });
+  pedidoAtual.reservado = false;
+  pedidoAtual.tagReserva = '';
+  salvarOrcamentoAtual(false);
+  salvarEstoqueServidor();
+  renderPedidoTabela();
+  renderOrcamentosSalvos();
+}
+
+function separarLista() {
+  if (!pedidoAtual) { alert('Gere um orçamento primeiro.'); return; }
+  const titulo = (pedidoAtual.titulo || '').trim() || 'Orçamento';
+  if (!confirm('Criar a pasta "' + titulo + '" e mover os itens desta lista para ela?')) return;
+  if (!pastas.includes(titulo)) {
+    pastas.push(titulo);
+    if (!pastasMeta[titulo]) pastasMeta[titulo] = {};
+  }
+  pedidoAtual.itens.forEach(it => {
+    const card = it.cardRef;
+    if (!it.encontrado || !card) return;
+    const pedida = parseFloat(it.qtd) || 0;
+    const tem = parseFloat(card.qtd) || 0;
+    const qtd = Math.min(pedida, tem);
+    if (qtd <= 0) return;
+    if (tem <= qtd) {
+      card.pasta = titulo;
+      it.pasta = titulo;
+      it.qtd = tem;
+    } else {
+      card.qtd = Math.round((tem - qtd) * 100) / 100;
+      const novo = Object.assign({}, card, { qtd, pasta: titulo });
+      estoque.push(novo);
+      it.cardRef = novo;
+      it.pasta = titulo;
+      it.qtd = qtd;
+    }
+  });
+  salvarListaPastas();
+  salvarPastasMeta();
+  salvarEstoqueServidor();
+  renderPastas();
+  totalizarPedido();
+  renderPedidoTabela();
+  alert('Itens movidos para a pasta "' + titulo + '".');
+}
+
 function renderOrcamentosSalvos() {
   const cont = document.getElementById('orcamentosLista');
   if (!cont) return;
   cont.innerHTML = orcamentosSalvos.map((o, i) => `
     <div style="padding:0.45rem 0;border-bottom:1px solid var(--borda);display:flex;justify-content:space-between;gap:0.6rem;align-items:center;">
       <div style="cursor:pointer;" onclick="reabrirOrcamento(${i})">
-        <strong>${esc(o.cliente || 'Cliente')}</strong> — ${esc(o.titulo || 'Sem título')}
+        <strong>${esc(o.cliente || 'Cliente')}</strong> — ${esc(o.titulo || 'Sem título')}${o.reservado ? ' [RESERVADO]' : ''}
         <div class="muted">Atualizado em ${esc(formatarQuando(o.atualizado || o.data))}</div>
       </div>
       <button class="secondary small" style="background:#c41e3a;" onclick="excluirOrcamento(${i})">Excluir</button>
@@ -2987,7 +3133,7 @@ function visualizarSaida(i) {
   const p = pedidosHistorico[i];
   const modal = document.createElement('div');
   modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:3000;overflow:auto;';
-  let html = `<div style="background:white;margin:2rem auto;max-width:1000px;border-radius:12px;padding:1.5rem;">
+  let html = `<div style="background:var(--card);color:var(--texto);margin:2rem auto;max-width:1000px;border-radius:12px;padding:1.5rem;">
     <h2>${p.codigo} — ${p.cliente}</h2>
     <p>${p.titulo} | ${p.data}</p>
     <table><thead><tr><th>Qtd</th><th>Nome</th><th>Edição</th><th>Pasta</th><th>Idioma</th><th>Estado</th><th>Unit.</th><th>Total</th></tr></thead><tbody>`;
