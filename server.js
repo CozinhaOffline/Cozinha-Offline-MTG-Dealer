@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const zlib = require('zlib');
 const db = require('./db');
 const { buscarPrecoLigamagic } = require('./scraper');
 
@@ -15,7 +16,16 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.get('/api/estoque', async (req, res) => {
   try {
     const { rows } = await db.query('SELECT * FROM cartas ORDER BY nome');
-    res.json(rows);
+    const body = JSON.stringify(rows);
+    if (String(req.headers['accept-encoding'] || '').includes('gzip')) {
+      zlib.gzip(body, (err, buf) => {
+        if (err) return res.type('json').send(body);
+        res.setHeader('Content-Encoding', 'gzip');
+        res.type('json').send(buf);
+      });
+    } else {
+      res.type('json').send(body);
+    }
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -157,7 +167,7 @@ app.post('/api/atualizar-ml', async (req, res) => {
 
 // Teste de conexão com o banco
 app.get('/api/status', async (req, res) => {
-  const versao = 'pg-v4';
+  const versao = 'pg-v5';
   if (!process.env.DATABASE_URL) {
     return res.json({ ok: false, versao, banco: 'falhou', erro: 'DATABASE_URL nao esta configurada no Render' });
   }
