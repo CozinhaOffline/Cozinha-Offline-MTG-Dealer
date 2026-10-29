@@ -102,7 +102,7 @@
   <img src="logo.png" alt="Cozinha Offline Store">
   <div>
     <h1>Cozinha Offline Store</h1>
-    <p>Gestão de estoque, pedidos e orçamentos · versão 28/10</p>
+    <p>Gestão de estoque, pedidos e orçamentos · versão 29/10</p>
   </div>
 </header>
 <nav>
@@ -2625,7 +2625,7 @@ async function carregarRegistros() {
 }
 
 function normNome(s) {
-  return String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
+  return String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
 function lerLinhaLista(linha) {
@@ -2640,17 +2640,19 @@ function lerLinhaLista(linha) {
 function buscarNoEstoque(nome) {
   const n = normNome(nome);
   if (!n || !Array.isArray(estoque)) return [];
-  const exatos = [];
-  const parciais = [];
-  estoque.forEach(c => {
-    if (!(parseFloat(c.qtd) > 0)) return;
+  return estoque.filter(c => {
+    if (!(parseFloat(c.qtd) > 0)) return false;
     const en = normNome(c.nome);
     const pt = normNome(c.nomePt);
-    if (!en && !pt) return;
-    if (en === n || pt === n) exatos.push(c);
-    else if ((en && (en.includes(n) || n.includes(en))) || (pt && (pt.includes(n) || n.includes(pt)))) parciais.push(c);
+    return (en && en === n) || (pt && pt === n);
   });
-  return exatos.length ? exatos : parciais;
+}
+
+function ordenarItensOrcamento() {
+  if (!pedidoAtual || !Array.isArray(pedidoAtual.itens)) return;
+  const achados = pedidoAtual.itens.filter(i => i.encontrado).sort((a, b) => (parseFloat(b.preco) || 0) - (parseFloat(a.preco) || 0) || String(a.nome || '').localeCompare(String(b.nome || ''), 'pt'));
+  const faltam = pedidoAtual.itens.filter(i => !i.encontrado).sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt', { sensitivity: 'base' }));
+  pedidoAtual.itens = achados.concat(faltam);
 }
 
 function cruzarPedido() {
@@ -2685,6 +2687,7 @@ function cruzarPedido() {
     data: new Date().toLocaleString('pt-BR'),
     codigo: null
   };
+  ordenarItensOrcamento();
   totalizarPedido();
   renderPedidoTabela();
 }
@@ -2695,6 +2698,9 @@ function renderPedidoTabela() {
       <div class="col"><label>Cliente</label><input type="text" value="${esc(pedidoAtual.cliente || '')}" onchange="pedidoAtual.cliente=this.value;var c=document.getElementById('pedCliente');if(c)c.value=this.value;"></div>
       <div class="col"><label>Título</label><input type="text" value="${esc(pedidoAtual.titulo || '')}" onchange="pedidoAtual.titulo=this.value;var c=document.getElementById('pedTitulo');if(c)c.value=this.value;"></div>
     </div>`;
+  const qtdOk = pedidoAtual.itens.filter(i => i.encontrado).reduce((s, i) => s + (parseFloat(i.qtd) || 0), 0);
+  const qtdNo = pedidoAtual.itens.filter(i => !i.encontrado).reduce((s, i) => s + (parseFloat(i.qtd) || 0), 0);
+  html += `<p class="muted">Encontrados: ${qtdOk} cartas · Não encontrados: ${qtdNo} cartas</p>`;
   html += '<table><thead><tr><th>Qtd</th><th>Nome</th><th>Edição</th><th>Pasta</th><th>Idioma</th><th>Estado</th><th>Preço</th><th>Total</th><th></th></tr></thead><tbody>';
   pedidoAtual.itens.forEach((it, i) => {
     if (!it.encontrado) {
@@ -2859,6 +2865,7 @@ function adicionarItemPedidoManual() {
   const qtd = parseInt(document.getElementById('addItemQtd').value) || 1;
   if (!nome) { alert('Informe o nome.'); return; }
   pedidoAtual.itens.push(itemDeCarta(nome, qtd));
+  ordenarItensOrcamento();
   totalizarPedido();
   renderPedidoTabela();
 }
@@ -2868,11 +2875,10 @@ function adicionarListaPedido() {
   const texto = (document.getElementById('addItemLista').value || '').trim();
   if (!texto) { alert('Cole a lista.'); return; }
   texto.split('\n').map(l => l.trim()).filter(Boolean).forEach(linha => {
-    const m = linha.match(/^(\d+)\s+(.+)$/);
-    const qtd = m ? parseInt(m[1]) : 1;
-    const nome = (m ? m[2] : linha).trim();
-    pedidoAtual.itens.push(itemDeCarta(nome, qtd));
+    const lido = lerLinhaLista(linha);
+    pedidoAtual.itens.push(itemDeCarta(lido.nome, lido.qtd));
   });
+  ordenarItensOrcamento();
   totalizarPedido();
   renderPedidoTabela();
 }
@@ -2906,16 +2912,36 @@ async function imprimirOrcamento() {
   const conta = valoresPedido(pedidoAtual);
   const w = window.open('', '_blank');
   if (!w) { alert('O navegador bloqueou a janela de impressão. O orçamento foi salvo mesmo assim.'); return; }
-  let html = `<html><head><title>Orçamento</title><style>body{font-family:sans-serif;}table{border-collapse:collapse;width:100%;}th,td{border:1px solid #ccc;padding:6px;text-align:left;}th{background:#1a3a6b;color:white;}</style></head><body>
-    <h2>Orçamento — ${pedidoAtual.cliente}</h2>
-    <p>${pedidoAtual.titulo} | ${pedidoAtual.data}</p>
-    <table><thead><tr><th>Qtd</th><th>Nome</th><th>Edição</th><th>Idioma</th><th>Estado</th><th>Unit.</th><th>Total</th></tr></thead><tbody>`;
+  let html = `<html><head><title>Orçamento</title><style>
+    @page { margin: 12mm; }
+    body { font-family: Georgia, "Times New Roman", serif; color: #1c1c1c; font-size: 11px; margin: 0; }
+    h1 { font-size: 16px; margin: 0 0 2px; letter-spacing: 0.03em; }
+    .loja { font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: #6a5a3a; margin: 0 0 8px; }
+    .sub { margin: 0 0 12px; color: #444; font-size: 11px; }
+    table { width: 100%; border-collapse: collapse; font-size: 10px; }
+    th { background: #1a2a32; color: #f4efe4; font-weight: 600; text-align: left; padding: 4px 5px; font-size: 9px; letter-spacing: 0.03em; }
+    td { padding: 3px 5px; border-bottom: 1px solid #e4e0d8; vertical-align: top; }
+    tr:nth-child(even) td { background: #f7f5f1; }
+    .num { text-align: right; white-space: nowrap; }
+    .totais { margin-top: 12px; margin-left: auto; width: 230px; font-size: 11px; }
+    .totais div { display: flex; justify-content: space-between; padding: 2px 0; }
+    .grand { font-size: 13px; font-weight: 700; border-top: 1px solid #1a2a32; margin-top: 4px; padding-top: 4px; }
+  </style></head><body>
+    <p class="loja">Cozinha Offline Store</p>
+    <h1>Orçamento — ${esc(pedidoAtual.cliente)}</h1>
+    <p class="sub">${esc(pedidoAtual.titulo)} · ${esc(pedidoAtual.data || '')}</p>
+    <table><thead><tr><th>Qtd</th><th>Nome</th><th>Edição</th><th>Extras</th><th>Idioma</th><th>Estado</th><th class="num">Unit.</th><th class="num">Total</th></tr></thead><tbody>`;
   pedidoAtual.itens.forEach(it => {
-    if (it.encontrado) html += `<tr><td>${it.qtd}</td><td>${it.nome}</td><td>${it.set||'-'}</td><td>${it.lang}</td><td>${it.cond}</td><td>${formatMoney(it.preco)}</td><td>${formatMoney((it.qtd||0)*(it.preco||0))}</td></tr>`;
+    if (!it.encontrado) return;
+    html += `<tr><td class="num">${it.qtd}</td><td>${esc(it.nome)}</td><td>${esc(it.set || '-')}</td><td>${esc(it.extras || '-')}</td><td>${esc(it.lang || '-')}</td><td>${esc(it.cond || '-')}</td><td class="num">${formatMoney(it.preco)}</td><td class="num">${formatMoney((it.qtd || 0) * (it.preco || 0))}</td></tr>`;
   });
   html += `</tbody></table>
-    <p>Subtotal: ${formatMoney(conta.sub)}<br>Desconto (${pedidoAtual.descontoPct || 0}%): - ${formatMoney(conta.desc)}<br>Frete: ${formatMoney(conta.frete)}</p>
-    <h3>Total: ${formatMoney(conta.total)}</h3></body></html>`;
+    <div class="totais">
+      <div><span>Subtotal</span><span>${formatMoney(conta.sub)}</span></div>
+      <div><span>Desconto (${pedidoAtual.descontoPct || 0}%)</span><span>- ${formatMoney(conta.desc)}</span></div>
+      <div><span>Frete</span><span>${formatMoney(conta.frete)}</span></div>
+      <div class="grand"><span>Total</span><span>${formatMoney(conta.total)}</span></div>
+    </div></body></html>`;
   w.document.write(html);
   w.document.close();
   w.print();
@@ -2970,9 +2996,22 @@ function reservarLista() {
   pedidoAtual.itens.forEach(it => {
     const card = it.cardRef;
     if (!it.encontrado || !card) return;
-    const obs = String(card.obs || '');
-    if (!obs.includes(tag)) card.obs = (obs ? obs.replace(/\s+$/, '') + ' ' : '') + tag;
-    it.obs = card.obs;
+    const pedida = parseFloat(it.qtd) || 0;
+    const tem = parseFloat(card.qtd) || 0;
+    const qtd = Math.min(pedida, tem);
+    if (qtd <= 0) return;
+    let alvo = card;
+    if (tem > qtd) {
+      card.qtd = Math.round((tem - qtd) * 100) / 100;
+      alvo = Object.assign({}, card, { qtd, obs: String(card.obs || '').split(tag).join('').replace(/\s{2,}/g, ' ').trim() });
+      estoque.push(alvo);
+      it.cardRef = alvo;
+      it.qtd = qtd;
+      it.total = qtd * (parseFloat(it.preco) || 0);
+    }
+    const obs = String(alvo.obs || '');
+    if (!obs.includes(tag)) alvo.obs = (obs ? obs.replace(/\s+$/, '') + ' ' : '') + tag;
+    it.obs = alvo.obs;
     n++;
   });
   pedidoAtual.reservado = true;
