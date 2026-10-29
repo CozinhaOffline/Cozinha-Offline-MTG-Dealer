@@ -102,7 +102,7 @@
   <img src="logo.png" alt="Cozinha Offline Store">
   <div>
     <h1>Cozinha Offline Store</h1>
-    <p>Gestão de estoque, pedidos e orçamentos · versão 29/10-2</p>
+    <p>Gestão de estoque, pedidos e orçamentos · versão 29/10-3</p>
   </div>
 </header>
 <nav>
@@ -2785,7 +2785,7 @@ function renderPedidoTabela() {
       <button class="secondary small" onclick="adicionarListaPedido()">Incluir lista</button>
       <button class="primary small" onclick="salvarOrcamentoAtual(true)">Salvar</button>
       <button class="secondary small" onclick="imprimirOrcamento()">Imprimir</button>
-      <button class="secondary small" onclick="exportarOrcamentoCsv()">CSV para importar</button>
+      <button class="secondary small" onclick="exportarOrcamento()">Exportar</button>
       <button class="secondary small" onclick="liberarPrecosOrcamento()">Alterar preços</button>
       <button class="secondary small" onclick="aplicarDescontoOrcamento()">Aplicar desconto</button>
       <button class="secondary small" onclick="adicionarFreteOrcamento()">Adicionar frete</button>
@@ -2847,14 +2847,51 @@ function adicionarFreteOrcamento() {
   renderPedidoTabela();
 }
 
-function exportarOrcamentoCsv() {
-  if (!pedidoAtual) return;
-  const cartas = pedidoAtual.itens.filter(it => it.encontrado).map(it => ({
-    qtd: it.qtd, nome: it.nome, nomePt: it.nomePt || '', set: it.set || '', setCode: it.setCode || '',
-    cond: it.cond || '', lang: it.lang || '', extras: it.extras || '', pasta: it.pasta || '',
-    ml: it.preco || 0, custo: it.preco || 0, pvs: it.preco || 0, desconto: 0, foil: /foil/i.test(it.extras || '')
+function itensDoOrcamento(modo) {
+  return (pedidoAtual.itens || []).filter(it => {
+    if (modo === 'ok') return !!it.encontrado;
+    if (modo === 'no') return !it.encontrado;
+    return true;
+  }).map(it => ({
+    qtd: it.qtd || 1,
+    nome: it.nome || '',
+    nomePt: it.nomePt || '',
+    set: it.set || '',
+    setCode: it.setCode || '',
+    cond: it.cond || '',
+    lang: it.lang || '',
+    extras: it.extras || '',
+    pasta: it.encontrado ? (it.pasta || '') : '',
+    obs: it.obs || '',
+    ml: it.preco || 0,
+    custo: it.preco || 0,
+    pvs: it.preco || 0,
+    desconto: 0,
+    foil: /foil/i.test(it.extras || '')
   }));
-  exportarGrupo(cartas, 'orcamento-' + (pedidoAtual.cliente || 'cliente'));
+}
+
+async function exportarOrcamento() {
+  if (!pedidoAtual) return;
+  const quais = prompt('Quais itens?\n1 = Apenas encontrados\n2 = Não encontrados\n3 = Todos');
+  const modos = { '1': 'ok', '2': 'no', '3': 'todos' };
+  if (!modos[quais]) return;
+  const cartas = itensDoOrcamento(modos[quais]);
+  if (!cartas.length) { alert('Não há itens nesse grupo.'); return; }
+  const escolha = prompt('Exportar como:\n1 = Ligamagic\n2 = Manabox\n3 = COStorage\n4 = Área de transferência');
+  if (escolha === '4') {
+    const texto = cartas.map(c => (c.qtd || 1) + ' ' + (c.nome || '')).join('\n');
+    try {
+      await navigator.clipboard.writeText(texto);
+      alert(cartas.length + ' linha(s) copiadas.');
+    } catch (e) {
+      prompt('Copie o texto abaixo:', texto);
+    }
+    return;
+  }
+  const mapa = { '1': 'ligamagic', '2': 'manabox', '3': 'costorage' };
+  if (!mapa[escolha]) return;
+  baixarCsvCartas(cartas, mapa[escolha], 'orcamento-' + (pedidoAtual.cliente || 'cliente'));
 }
 
 async function salvarOrcamentoAtual(avisar) {
