@@ -102,7 +102,7 @@
   <img src="logo.png" alt="Cozinha Offline Store">
   <div>
     <h1>Cozinha Offline Store</h1>
-    <p>Gestão de estoque, pedidos e orçamentos · versão 29/10</p>
+    <p>Gestão de estoque, pedidos e orçamentos · versão 29/10-2</p>
   </div>
 </header>
 <nav>
@@ -143,8 +143,8 @@
     <div class="card">
       <h2>Filtros e edição em massa</h2>
       <div class="filters" style="margin-bottom:0.6rem;">
-        <div><label>Nome</label><input type="text" id="fNomeBulk" placeholder="Nome em inglês ou português" oninput="aplicarFiltros()"></div>
-        <div><label>Cor</label><input type="text" id="fCorBulk" placeholder="W, U, B, R, G, M..." oninput="aplicarFiltros()"></div>
+        <div><label>Nome</label><input type="text" id="fNomeBulk" placeholder="Nome em inglês ou português" oninput="aplicarFiltrosDebounced()"></div>
+        <div><label>Cor</label><input type="text" id="fCorBulk" placeholder="W, U, B, R, G, M..." oninput="aplicarFiltrosDebounced()"></div>
         <div style="align-self:end;"><button class="secondary small" onclick="limparFiltros()">Limpar filtros</button></div>
       </div>
       <div class="filters" style="margin-bottom:0.6rem;">
@@ -258,6 +258,7 @@
         <button class="secondary small" id="btnViewDetail" onclick="setViewMode('detail')">Visão Detalhada</button>
       </div>
       <div id="estoqueStats" class="stats"></div>
+      <div id="estoquePager" style="display:flex;gap:0.6rem;align-items:center;margin:0.3rem 0;"></div>
       <div id="tableContainer">
         <table id="estoqueTable">
           <thead>
@@ -1681,6 +1682,16 @@ function excluirFiltrados() {
 function renderPastas() {
   const el = document.getElementById('listaPastas');
   if (!el) return;
+  const totais = new Map();
+  estoque.forEach(c => {
+    const p = c.pasta || 'Geral';
+    let s = totais.get(p);
+    if (!s) { s = { qtd: 0, llp: 0, pvs: 0 }; totais.set(p, s); }
+    const q = parseFloat(c.qtd) || 0;
+    s.qtd += q;
+    s.llp += (parseFloat(c.ml) || 0) * q;
+    s.pvs += (parseFloat(c.pvs) || 0) * q;
+  });
   const selCusto = document.getElementById('custoAlvoPasta');
   if (selCusto) {
     const atual = selCusto.value;
@@ -1688,10 +1699,10 @@ function renderPastas() {
     if (atual) selCusto.value = atual;
   }
   el.innerHTML = pastas.map((p, i) => {
-    const itens = estoque.filter(c => (c.pasta || 'Geral') === p);
-    const qtd = itens.reduce((s, c) => s + (parseFloat(c.qtd) || 0), 0);
-    const llp = itens.reduce((s, c) => s + (parseFloat(c.ml) || 0) * (parseFloat(c.qtd) || 0), 0);
-    const pvs = itens.reduce((s, c) => s + (parseFloat(c.pvs) || 0) * (parseFloat(c.qtd) || 0), 0);
+    const st = totais.get(p) || { qtd: 0, llp: 0, pvs: 0 };
+    const qtd = st.qtd;
+    const llp = st.llp;
+    const pvs = st.pvs;
     const active = window.pastaAtiva === p ? 'border:2px solid var(--vermelho);' : 'border:1px solid var(--borda);';
     const img = pastasMeta[p] && pastasMeta[p].imagem;
     const bg = img
@@ -2091,7 +2102,23 @@ function calcularPVS(card) {
   return calcPVS(card);
 }
 
+let filtroTimer = null;
+let paginaEstoque = 0;
+const POR_PAGINA = 200;
+
+function aplicarFiltrosDebounced() {
+  clearTimeout(filtroTimer);
+  filtroTimer = setTimeout(aplicarFiltros, 180);
+}
+
+function irPaginaEstoque(n) {
+  const max = Math.max(0, Math.ceil(filtered.length / POR_PAGINA) - 1);
+  paginaEstoque = Math.max(0, Math.min(n, max));
+  renderEstoque();
+}
+
 function aplicarFiltros() {
+  paginaEstoque = 0;
   const nome = (document.getElementById('fNomeBulk')?.value || '').toLowerCase().trim();
   const cor = (document.getElementById('fCorBulk')?.value || '').toLowerCase().trim();
   const sort = document.getElementById('fSort')?.value || 'nome-az';
@@ -2221,7 +2248,7 @@ function renderEstoque() {
     inp.addEventListener('input', () => {
       filtroFoco = { k, pos: inp.selectionStart };
       colFilterVals[k] = inp.value.toLowerCase();
-      aplicarFiltros();
+      aplicarFiltrosDebounced();
     });
     inp.addEventListener('keydown', (ev) => {
       if (ev.key === 'Enter') ev.preventDefault();
@@ -2236,8 +2263,22 @@ function renderEstoque() {
     }
   }
 
-  filtered.forEach((c, i) => {
-    aplicarCalculos(c);
+  const inicio = paginaEstoque * POR_PAGINA;
+  const fim = Math.min(inicio + POR_PAGINA, filtered.length);
+  const pager = document.getElementById('estoquePager');
+  if (pager) {
+    const paginas = Math.max(1, Math.ceil(filtered.length / POR_PAGINA));
+    pager.innerHTML = filtered.length
+      ? `<span class="muted">Mostrando ${inicio + 1}–${fim} de ${filtered.length}</span>
+         <button class="secondary small" type="button" onclick="irPaginaEstoque(${paginaEstoque - 1})" ${paginaEstoque <= 0 ? 'disabled' : ''}>Anterior</button>
+         <span class="muted">${paginaEstoque + 1} / ${paginas}</span>
+         <button class="secondary small" type="button" onclick="irPaginaEstoque(${paginaEstoque + 1})" ${fim >= filtered.length ? 'disabled' : ''}>Próxima</button>`
+      : '';
+  }
+
+  const frag = document.createDocumentFragment();
+  for (let i = inicio; i < fim; i++) {
+    const c = filtered[i];
     const tr = document.createElement('tr');
     let html = viewMode === 'detail' ? `<td class="checkbox-col"><input type="checkbox" class="row-check" data-i="${i}"></td>` : '';
     cols.forEach(([key]) => {
@@ -2246,15 +2287,16 @@ function renderEstoque() {
       else if (key === 'desconto') val = formatPct(val);
       const locked = LOCKED.includes(key) || viewMode === 'simple';
       if (locked) {
-        html += `<td class="card-name" data-nome="${c.nome}" data-set="${c.setCode || ''}">${val}</td>`;
+        html += `<td class="card-name" data-nome="${esc(c.nome)}" data-set="${esc(c.setCode || '')}">${esc(val)}</td>`;
       } else {
-        html += `<td><input class="edit-input" data-i="${i}" data-k="${key}" value="${val}"></td>`;
+        html += `<td><input class="edit-input" data-i="${i}" data-k="${key}" value="${esc(val)}"></td>`;
       }
     });
     if (viewMode === 'detail') html += `<td><button class="secondary small" style="background:#c41e3a;" onclick="removerLinha(${i})">×</button></td>`;
     tr.innerHTML = html;
-    tbody.appendChild(tr);
-  });
+    frag.appendChild(tr);
+  }
+  tbody.appendChild(frag);
 
   tbody.querySelectorAll('.edit-input').forEach(inp => {
     inp.onchange = () => {
