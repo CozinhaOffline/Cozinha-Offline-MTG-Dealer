@@ -102,7 +102,7 @@
   <img src="logo.png" alt="Cozinha Offline Store">
   <div>
     <h1>Cozinha Offline Store</h1>
-    <p>Gestão de estoque, pedidos e orçamentos · versão 30/10</p>
+    <p>Gestão de estoque, pedidos e orçamentos · versão 31/10</p>
   </div>
 </header>
 <nav>
@@ -2690,9 +2690,28 @@ function buscarNoEstoque(nome) {
   });
 }
 
+let orcamentoSort = { key: 'preco', dir: -1 };
+
+function ordenarOrcamentoPor(key) {
+  if (!pedidoAtual) return;
+  if (orcamentoSort.key === key) orcamentoSort.dir *= -1;
+  else orcamentoSort = { key, dir: (key === 'qtd' || key === 'preco') ? -1 : 1 };
+  ordenarItensOrcamento();
+  renderPedidoTabela();
+}
+
 function ordenarItensOrcamento() {
   if (!pedidoAtual || !Array.isArray(pedidoAtual.itens)) return;
-  const achados = pedidoAtual.itens.filter(i => i.encontrado).sort((a, b) => (parseFloat(b.preco) || 0) - (parseFloat(a.preco) || 0) || String(a.nome || '').localeCompare(String(b.nome || ''), 'pt'));
+  const key = orcamentoSort.key || 'preco';
+  const dir = orcamentoSort.dir || -1;
+  const num = key === 'qtd' || key === 'preco';
+  const achados = pedidoAtual.itens.filter(i => i.encontrado).sort((a, b) => {
+    let d = 0;
+    if (num) d = ((parseFloat(a[key]) || 0) - (parseFloat(b[key]) || 0)) * dir;
+    else d = String(a[key] || '').localeCompare(String(b[key] || ''), 'pt', { sensitivity: 'base' }) * dir;
+    if (d) return d;
+    return String(a.nome || '').localeCompare(String(b.nome || ''), 'pt');
+  });
   const faltam = pedidoAtual.itens.filter(i => !i.encontrado).sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt', { sensitivity: 'base' }));
   pedidoAtual.itens = achados.concat(faltam);
 }
@@ -2729,6 +2748,7 @@ function cruzarPedido() {
     data: new Date().toLocaleString('pt-BR'),
     codigo: null
   };
+  orcamentoSort = { key: 'preco', dir: -1 };
   ordenarItensOrcamento();
   totalizarPedido();
   renderPedidoTabela();
@@ -2742,8 +2762,14 @@ function renderPedidoTabela() {
     </div>`;
   const qtdOk = pedidoAtual.itens.filter(i => i.encontrado).reduce((s, i) => s + (parseFloat(i.qtd) || 0), 0);
   const qtdNo = pedidoAtual.itens.filter(i => !i.encontrado).reduce((s, i) => s + (parseFloat(i.qtd) || 0), 0);
-  html += `<p class="muted">Encontrados: ${qtdOk} cartas · Não encontrados: ${qtdNo} cartas</p>`;
-  html += '<table><thead><tr><th>Qtd</th><th>Nome</th><th>Edição</th><th>Pasta</th><th>Idioma</th><th>Estado</th><th>Preço</th><th>Total</th><th></th></tr></thead><tbody>';
+  html += `<p class="muted">Encontrados: ${qtdOk} cartas · Não encontrados: ${qtdNo} cartas. Clique no título da coluna para ordenar.</p>`;
+  const colsOrc = [['qtd','Qtd'],['nome','Nome'],['set','Edição'],['pasta','Pasta'],['lang','Idioma'],['cond','Estado'],['preco','Preço']];
+  html += '<table><thead><tr>';
+  colsOrc.forEach(([k, label]) => {
+    const marca = orcamentoSort.key === k ? (orcamentoSort.dir < 0 ? ' ↓' : ' ↑') : '';
+    html += `<th style="cursor:pointer;" onclick="ordenarOrcamentoPor('${k}')">${label}${marca}</th>`;
+  });
+  html += '<th>Total</th><th></th></tr></thead><tbody>';
   pedidoAtual.itens.forEach((it, i) => {
     if (!it.encontrado) {
       html += `<tr><td><input class="edit-input" value="${it.qtd || 1}" onchange="editarItemPedido(${i},'qtd',this.value)"></td><td colspan="6" class="card-name" data-nome="${esc(it.nome)}" style="color:#e85d72">${esc(it.nome)} — não encontrado</td><td></td><td><button class="secondary small" style="background:#c41e3a;" onclick="removerItemPedido(${i})">×</button></td></tr>`;
