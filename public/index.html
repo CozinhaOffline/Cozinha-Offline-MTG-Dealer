@@ -102,12 +102,13 @@
   <img src="logo.png" alt="Cozinha Offline Store">
   <div>
     <h1>Cozinha Offline Store</h1>
-    <p>Gestão de estoque, pedidos e orçamentos · versão 31/10</p>
+    <p>Gestão de estoque, pedidos e orçamentos · versão 02/11</p>
   </div>
 </header>
 <nav>
   <button class="active" data-tab="estoque">Estoque</button>
   <button data-tab="pedidos">Pedidos</button>
+  <button data-tab="financeiro">Financeiro</button>
   <button data-tab="custos">Custos e PVS</button>
   <button data-tab="orcamento">Orçamento</button>
   <button data-tab="avaliador">Avaliador de Listas</button>
@@ -145,6 +146,8 @@
       <div class="filters" style="margin-bottom:0.6rem;">
         <div><label>Nome</label><input type="text" id="fNomeBulk" placeholder="Nome em inglês ou português" oninput="aplicarFiltrosDebounced()"></div>
         <div><label>Cor</label><input type="text" id="fCorBulk" placeholder="W, U, B, R, G, M..." oninput="aplicarFiltrosDebounced()"></div>
+        <div><label>IDP</label><select id="fIdpBulk" onchange="aplicarFiltros()"><option value="">Todos</option></select></div>
+        <div><label>Código de entrada</label><input type="text" id="fCodigoBulk" list="listaCodigosEntrada" placeholder="Código completo" oninput="aplicarFiltrosDebounced()"></div>
         <div style="align-self:end;"><button class="secondary small" onclick="limparFiltros()">Limpar filtros</button></div>
       </div>
       <div class="filters" style="margin-bottom:0.6rem;">
@@ -172,6 +175,11 @@
           </select>
         </div>
         <div style="align-self:end;"><button class="primary small" onclick="aplicarBulk()">Aplicar</button></div>
+      </div>
+      <div class="filters" style="margin-bottom:0.6rem;">
+        <div><label>IDP do código</label><select id="bulkIdp"><option value="">Selecione</option></select></div>
+        <div><label>Restante do código</label><input type="text" id="bulkResto" placeholder="vazio = 0000"></div>
+        <div style="align-self:end;"><button class="primary small" onclick="aplicarCodigoMassa()">Aplicar código</button></div>
       </div>
       <div class="filters">
         <div><label>Ordenar por</label>
@@ -225,6 +233,8 @@
         <div><label>Extras</label><input type="text" id="manExtras" placeholder="Foil, Showcase..."></div>
         <div><label>LLP (R$)</label><input type="text" id="manLlp" placeholder="0,00"></div>
         <div><label>Desconto (%)</label><input type="text" id="manDesc" placeholder="-20 ou 30"></div>
+        <div><label>IDP *</label><select id="manIdp"><option value="">Selecione</option></select></div>
+        <div><label>Restante do código</label><input type="text" id="manCodResto" placeholder="vazio = 0000"></div>
         <div><label>Liquidez</label><select id="manLiq"><option>A</option><option>B</option><option selected>C</option><option>D</option></select></div>
       </div>
       <button class="primary small" onclick="adicionarManual()">Adicionar ao estoque</button>
@@ -304,6 +314,11 @@
         <div><label>Valor pago pelo lote (R$)</label><input type="text" id="impPago" placeholder="0,00"></div>
         <div style="align-self:end;"><button class="secondary small" onclick="calcularCustoImportacao()">Calcular custo</button></div>
       </div>
+      <div class="filters" style="margin-bottom:0.8rem;">
+        <div><label>IDP *</label><select id="impIdp"><option value="">Selecione</option></select></div>
+        <div><label>Restante do código</label><input type="text" id="impResto" placeholder="vazio = 0000"></div>
+      </div>
+      <p class="muted">O IDP é obrigatório. O código de entrada fica IDP + restante. Se o restante ficar vazio, entra 0000. Mínimo de 4 letras ou números quando preenchido.</p>
       <div id="modalTableContainer" style="max-height:50vh;overflow:auto;border:1px solid var(--borda);border-radius:8px;"></div>
       <div style="margin-top:1rem;display:flex;gap:0.8rem;justify-content:flex-end;">
         <button class="secondary" onclick="cancelarImportacao()">Cancelar importação</button>
@@ -340,6 +355,38 @@
       <datalist id="listaCodigosSaida"></datalist>
       <datalist id="listaClientesSaida"></datalist>
       <div id="historicoSaidas"></div>
+    </div>
+  </div>
+  <div id="financeiro" class="tab">
+    <div class="card">
+      <h2>Financeiro</h2>
+      <p class="muted">Faturamento, custo e lucro das vendas. Saídas canceladas aparecem na lista, mas não entram na conta. O custo é o das cartas vendidas.</p>
+      <div class="filters">
+        <div><label>De</label><input type="date" id="finDe"></div>
+        <div><label>Até</label><input type="date" id="finAte"></div>
+        <div><label>Agrupar</label>
+          <select id="finGrupo">
+            <option value="dia">Diário</option>
+            <option value="semana">Semanal</option>
+            <option value="mes" selected>Mensal</option>
+            <option value="trimestre">Trimestral</option>
+            <option value="semestre">Semestral</option>
+            <option value="ano">Anual</option>
+          </select>
+        </div>
+        <div><label>IDP</label><select id="finIdp" onchange="renderFinanceiro()"><option value="">Todos</option></select></div>
+        <div><label>Código de entrada</label><input type="text" id="finCodigo" list="listaCodigosEntrada" placeholder="Só códigos já existentes" onchange="renderFinanceiro()"></div>
+        <div style="align-self:end;"><button class="primary small" type="button" onclick="renderFinanceiro()">Atualizar</button></div>
+        <div style="align-self:end;"><button class="secondary small" type="button" onclick="exportarFinanceiro('xlsx')">Exportar XLSX</button></div>
+        <div style="align-self:end;"><button class="secondary small" type="button" onclick="exportarFinanceiro('pdf')">Exportar PDF</button></div>
+      </div>
+      <div id="finResumo" class="stats"></div>
+      <div id="finPeriodos" style="overflow:auto;margin-top:0.8rem;"></div>
+      <h3>Saídas no período</h3>
+      <div id="finSaidas" style="overflow:auto;max-height:380px;"></div>
+      <h3>Entradas no período</h3>
+      <div id="finEntradas" style="overflow:auto;max-height:380px;"></div>
+      <datalist id="listaCodigosEntrada"></datalist>
     </div>
   </div>
   <div id="custos" class="tab">
@@ -429,6 +476,15 @@
       </div>
     </div>
     <div class="card">
+      <h2>Procedência (IDP)</h2>
+      <p class="muted">Os 3 primeiros caracteres do código de entrada. GET compra ou troca, VB5 com o Bira, HIS coleção histórica, BIR coleção histórica do Bira. Novos IDPs também têm 3 caracteres.</p>
+      <div id="listaIdpsConfig" style="margin-bottom:0.6rem;"></div>
+      <div class="filters">
+        <div><label>Novo IDP</label><input type="text" id="novoIdp" maxlength="3" placeholder="ABC"></div>
+        <div style="align-self:end;"><button class="primary small" type="button" onclick="adicionarIdp()">Criar IDP</button></div>
+      </div>
+    </div>
+    <div class="card">
       <h2>Segurança</h2>
       <h3>Senha de administrador</h3>
       <p class="muted">Pedida para alterar preço e aplicar desconto num orçamento. A senha inicial é 123456.</p>
@@ -459,7 +515,7 @@
 </div>
 
 <script>
-const { jsPDF } = window.jspdf;
+const jsPDF = (window.jspdf && window.jspdf.jsPDF) || null;
 let estoque = [];
 async function carregarEstoqueServidor() {
   try {
@@ -1982,9 +2038,11 @@ function escolherPasta(callback) {
 
 async function adicionarAoEstoque() {
   if (!pendingImport.length) { alert('Nada para importar.'); return; }
+  const codigo = montarCodigoEntrada(document.getElementById('impIdp')?.value, document.getElementById('impResto')?.value);
+  if (codigo.erro) { alert(codigo.erro); return; }
   const pasta = escolherPasta();
   if (!pasta) return;
-  pendingImport.forEach(c => { c.pasta = pasta; aplicarCalculos(c); });
+  pendingImport.forEach(c => { c.pasta = pasta; c.codigo = codigo.codigo; aplicarCalculos(c); });
   const novos = pendingImport.slice();
   document.getElementById('importModal').style.display = 'none';
   pendingImport = [];
@@ -2005,6 +2063,7 @@ async function adicionarAoEstoque() {
       }
       gravadas += fatia.length;
       estoque = estoque.concat(fatia);
+      await registrarEntradas(fatia);
     }
   } catch (e) {
     alert('A importação parou em ' + gravadas + ' de ' + novos.length + '. Erro: ' + (e.message || e));
@@ -2128,6 +2187,10 @@ function aplicarFiltros() {
     if (pastaAtiva && (c.pasta || 'Geral') !== pastaAtiva) return false;
     if (nome && !(c.nome || '').toLowerCase().includes(nome) && !(c.nomePt || '').toLowerCase().includes(nome)) return false;
     if (cor && !(c.cor || '').toLowerCase().includes(cor)) return false;
+    const idpFiltro = document.getElementById('fIdpBulk')?.value || '';
+    const codFiltro = (document.getElementById('fCodigoBulk')?.value || '').trim().toUpperCase();
+    if (idpFiltro && idpDe(c.codigo) !== idpFiltro) return false;
+    if (codFiltro && !String(c.codigo || '').toUpperCase().includes(codFiltro)) return false;
     for (const [k, v] of Object.entries(colFilterVals)) {
       if (!v) continue;
       if (valorFiltroCol(c, k).indexOf(v) === -1) return false;
@@ -2168,6 +2231,10 @@ function limparFiltros() {
   if (nome) nome.value = '';
   if (cor) cor.value = '';
   if (sort) sort.value = 'nome-az';
+  const idp = document.getElementById('fIdpBulk');
+  const cod = document.getElementById('fCodigoBulk');
+  if (idp) idp.value = '';
+  if (cod) cod.value = '';
   Object.keys(colFilterVals).forEach(k => delete colFilterVals[k]);
   window.pastaAtiva = '';
   renderPastas();
@@ -2336,6 +2403,8 @@ function removerLinha(i) {
 function adicionarManual() {
   const nome = document.getElementById('manNome').value.trim();
   if (!nome) { alert('Informe o nome em inglês.'); return; }
+  const codigo = montarCodigoEntrada(document.getElementById('manIdp').value, document.getElementById('manCodResto').value);
+  if (codigo.erro) { alert(codigo.erro); return; }
   const card = {
     nome,
     nomePt: document.getElementById('manNomePt').value.trim(),
@@ -2348,7 +2417,7 @@ function adicionarManual() {
     ml: parseMoney(document.getElementById('manLlp').value),
     desconto: parsePct(document.getElementById('manDesc').value),
     liquidez: document.getElementById('manLiq').value,
-    codigo: '', operacao: '', depara: '', obs: '', data: '',
+    codigo: codigo.codigo, operacao: '', depara: '', obs: '', data: '',
     custo: 0, pvs: 0, pasta: 'Manual', foil: /foil/i.test(document.getElementById('manExtras').value)
   };
   if (ehClasseA(card.nome)) card.liquidez = 'A';
@@ -2357,6 +2426,7 @@ function adicionarManual() {
   if (!pasta) return;
   card.pasta = pasta;
   estoque.push(card);
+  registrarEntradas([card]);
   filtered = [...estoque];
   renderPastas();
   renderEstoque();
@@ -2568,10 +2638,22 @@ function limparPedido(p) {
     atualizado: new Date().toISOString(),
     reservado: !!p.reservado,
     tagReserva: p.tagReserva || '',
+    cancelada: !!p.cancelada,
+    canceladaEm: p.canceladaEm || '',
+    quando: p.quando || new Date().toISOString(),
     itens: (p.itens || []).map(i => ({
       qtd: i.qtd, nome: i.nome, nomePt: i.nomePt || '', set: i.set || '', setCode: i.setCode || '',
       lang: i.lang, cond: i.cond, extras: i.extras || '', preco: i.preco, total: i.total,
-      encontrado: !!i.encontrado, pasta: i.pasta || '-', estoqueId: i.estoqueId || (i.cardRef && i.cardRef.id) || null
+      encontrado: !!i.encontrado, pasta: i.pasta || '-', estoqueId: i.estoqueId || (i.cardRef && i.cardRef.id) || null,
+      codigoEntrada: i.codigoEntrada || (i.cardRef && i.cardRef.codigo) || '',
+      custo: i.custo != null ? i.custo : ((i.cardRef && i.cardRef.custo) || 0),
+      ml: i.ml != null ? i.ml : ((i.cardRef && i.cardRef.ml) || 0),
+      liquidez: i.liquidez || (i.cardRef && i.cardRef.liquidez) || '',
+      foil: !!(i.foil || (i.cardRef && i.cardRef.foil)),
+      desconto: i.desconto != null ? i.desconto : ((i.cardRef && i.cardRef.desconto) || 0),
+      cor: i.cor || (i.cardRef && i.cardRef.cor) || '',
+      raridade: i.raridade || (i.cardRef && i.cardRef.raridade) || '',
+      obs: i.obs || ''
     }))
   };
 }
@@ -2664,6 +2746,12 @@ async function carregarRegistros() {
   } catch (e) {
     console.error(e);
   }
+  const entradas = await lerConfig('entradas');
+  entradasHistorico = Array.isArray(entradas) ? entradas : [];
+  const ids = await lerConfig('idps');
+  if (Array.isArray(ids) && ids.length) idps = ids.map(x => String(x).toUpperCase());
+  await semearEntradas();
+  renderIdpSelects();
 }
 
 function normNome(s) {
@@ -2733,7 +2821,7 @@ function cruzarPedido() {
     const card = matches[0];
     const qtd = Math.min(lido.qtd, parseFloat(card.qtd) || 0);
     const sub = qtd * (parseFloat(card.pvs) || 0);
-    itens.push({ qtd, nome: card.nome, nomePt: card.nomePt || '', set: card.set, setCode: card.setCode || '', lang: card.lang, cond: card.cond, extras: card.extras, obs: card.obs || '', preco: card.pvs, total: sub, encontrado: true, pasta: card.pasta || 'Geral', estoqueId: card.id || null, cardRef: card, alternativas: matches });
+    itens.push({ qtd, nome: card.nome, nomePt: card.nomePt || '', set: card.set, setCode: card.setCode || '', lang: card.lang, cond: card.cond, extras: card.extras, obs: card.obs || '', preco: card.pvs, total: sub, encontrado: true, pasta: card.pasta || 'Geral', estoqueId: card.id || null, codigoEntrada: card.codigo || '', custo: card.custo || 0, ml: card.ml || 0, liquidez: card.liquidez || '', cardRef: card, alternativas: matches });
   });
   pedidoAtual = {
     id: 'orc_' + Date.now(),
@@ -2961,7 +3049,7 @@ function itemDeCarta(nome, qtdPedida) {
   matches.sort((a, b) => (parseFloat(b.pvs) || 0) - (parseFloat(a.pvs) || 0));
   const card = matches[0];
   const qtd = Math.min(qtdPedida, parseFloat(card.qtd) || 0);
-  return { qtd, nome: card.nome, nomePt: card.nomePt || '', set: card.set, setCode: card.setCode || '', lang: card.lang, cond: card.cond, extras: card.extras, obs: card.obs || '', preco: card.pvs, total: qtd * (parseFloat(card.pvs) || 0), encontrado: true, pasta: card.pasta || 'Geral', estoqueId: card.id || null, cardRef: card, alternativas: matches };
+  return { qtd, nome: card.nome, nomePt: card.nomePt || '', set: card.set, setCode: card.setCode || '', lang: card.lang, cond: card.cond, extras: card.extras, obs: card.obs || '', preco: card.pvs, total: qtd * (parseFloat(card.pvs) || 0), encontrado: true, pasta: card.pasta || 'Geral', estoqueId: card.id || null, codigoEntrada: card.codigo || '', custo: card.custo || 0, ml: card.ml || 0, liquidez: card.liquidez || '', cardRef: card, alternativas: matches };
 }
 
 function adicionarItemPedidoManual() {
@@ -2996,6 +3084,10 @@ function trocarVersao(idx, altIdx) {
   it.set = nova.set;
   it.setCode = nova.setCode || '';
   it.estoqueId = nova.id || null;
+  it.codigoEntrada = nova.codigo || '';
+  it.custo = nova.custo || 0;
+  it.ml = nova.ml || 0;
+  it.liquidez = nova.liquidez || '';
   it.lang = nova.lang;
   it.cond = nova.cond;
   it.extras = nova.extras;
@@ -3272,6 +3364,7 @@ async function darBaixa() {
   salvarConfig('seqSaida', seqSaida);
   pedidoAtual.codigo = codigo;
   pedidoAtual.data = pedidoAtual.data || new Date().toLocaleString('pt-BR');
+  pedidoAtual.quando = new Date().toISOString();
   pedidosHistorico.unshift(limparPedido(pedidoAtual));
   filtered = [...estoque];
   renderEstoque();
@@ -3316,9 +3409,10 @@ function renderHistorico() {
   if (!lista.length) { el.innerHTML = '<p class="muted">Nenhuma saída registrada.</p>'; return; }
   el.innerHTML = lista.map(({ p, i }) => `
     <div style="border-bottom:1px solid var(--borda);padding:0.6rem 0;">
-      <strong>${esc(p.codigo || '-')}</strong> — ${esc(p.cliente)} (${esc(p.titulo)})
+      <strong>${esc(p.codigo || '-')}</strong> — ${esc(p.cliente)} (${esc(p.titulo)})${p.cancelada ? ' <span style="color:#e85d72;">[CANCELADA]</span>' : ''}
       <div class="muted">${esc(formatarQuando(p.data || p.atualizado))}</div>
       <button class="secondary small" onclick="visualizarSaida(${i})">Visualizar saída</button>
+      ${p.cancelada ? '' : `<button class="secondary small" style="background:#c41e3a;" onclick="cancelarSaida(${i})">Cancelar saída</button>`}
     </div>
   `).join('');
 }
@@ -3353,7 +3447,7 @@ function visualizarSaida(i, key) {
   modal.id = 'modalSaida';
   modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:3000;overflow:auto;';
   let html = `<div style="background:var(--card);color:var(--texto);margin:2rem auto;max-width:1100px;border-radius:12px;padding:1.5rem;">
-    <h2>${esc(p.codigo)} — ${esc(p.cliente)}</h2>
+    <h2>${esc(p.codigo)} — ${esc(p.cliente)}${p.cancelada ? ' [CANCELADA]' : ''}</h2>
     <p>${esc(p.titulo)} | ${esc(formatarQuando(p.data || p.atualizado))}</p>
     <p><strong>${totalCards}</strong> cartas neste pedido</p>
     <table><thead><tr>`;
@@ -3399,8 +3493,453 @@ document.querySelectorAll('nav button').forEach(btn => {
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     btn.classList.add('active');
     document.getElementById(btn.dataset.tab).classList.add('active');
+    if (btn.dataset.tab === 'financeiro') renderFinanceiro();
   });
 });
+
+let idps = ['GET', 'VB5', 'HIS', 'BIR'];
+let entradasHistorico = [];
+let ultimoFinanceiro = null;
+
+function idpDe(codigo) {
+  const s = String(codigo || '').trim().toUpperCase();
+  const lista = idps.slice().sort((a, b) => b.length - a.length);
+  return lista.find(id => s.startsWith(id)) || '';
+}
+
+function montarCodigoEntrada(idp, resto) {
+  const id = String(idp || '').trim().toUpperCase();
+  if (!idps.includes(id)) return { erro: 'Escolha um IDP. Sem ele não dá para dar entrada.' };
+  let r = String(resto || '').trim().toUpperCase();
+  if (!r) r = '0000';
+  if (!/^[A-Z0-9]{4,}$/.test(r)) return { erro: 'O restante do código precisa ter pelo menos 4 letras ou números. Deixe vazio para usar 0000.' };
+  return { codigo: id + r };
+}
+
+function renderIdpSelects() {
+  const opts = idps.map(id => `<option value="${esc(id)}">${esc(id)}</option>`).join('');
+  ['manIdp', 'impIdp', 'bulkIdp'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const atual = el.value;
+    el.innerHTML = '<option value="">Selecione</option>' + opts;
+    if (atual) el.value = atual;
+  });
+  [['fIdpBulk', 'Todos'], ['finIdp', 'Todos']].forEach(([id, vazio]) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const atual = el.value;
+    el.innerHTML = `<option value="">${vazio}</option>` + opts;
+    if (atual) el.value = atual;
+  });
+  const lista = document.getElementById('listaIdpsConfig');
+  if (lista) lista.innerHTML = idps.map(id => `<button type="button" class="secondary small" style="margin:0 0.35rem 0.35rem 0;" onclick="removerIdp('${id}')">${esc(id)} ×</button>`).join('') || '<span class="muted">Nenhum</span>';
+  const set = new Set();
+  if (Array.isArray(estoque)) estoque.forEach(c => { if (c.codigo) set.add(String(c.codigo).toUpperCase()); });
+  entradasHistorico.forEach(e => { if (e.codigo) set.add(String(e.codigo).toUpperCase()); });
+  pedidosHistorico.forEach(p => (p.itens || []).forEach(it => { if (it.codigoEntrada) set.add(String(it.codigoEntrada).toUpperCase()); }));
+  const dl = document.getElementById('listaCodigosEntrada');
+  if (dl) dl.innerHTML = [...set].sort().map(c => `<option value="${esc(c)}"></option>`).join('');
+}
+
+async function adicionarIdp() {
+  const id = (document.getElementById('novoIdp').value || '').trim().toUpperCase();
+  if (!/^[A-Z0-9]{3}$/.test(id)) { alert('O IDP precisa ter exatamente 3 letras ou números.'); return; }
+  if (idps.includes(id)) { alert('Esse IDP já existe.'); return; }
+  idps.push(id);
+  try { await salvarConfig('idps', idps); }
+  catch (e) { alert('Não consegui gravar o IDP.'); return; }
+  document.getElementById('novoIdp').value = '';
+  renderIdpSelects();
+}
+
+async function removerIdp(id) {
+  if (Array.isArray(estoque) && estoque.some(c => idpDe(c.codigo) === id)) {
+    alert('Ainda há cartas com o IDP ' + id + '. Troque o código delas antes de remover.');
+    return;
+  }
+  if (!confirm('Remover o IDP ' + id + '?')) return;
+  idps = idps.filter(x => x !== id);
+  try { await salvarConfig('idps', idps); } catch (e) { alert('Não consegui gravar.'); return; }
+  renderIdpSelects();
+}
+
+function aplicarCodigoMassa() {
+  const alvo = montarCodigoEntrada(document.getElementById('bulkIdp').value, document.getElementById('bulkResto').value);
+  if (alvo.erro) { alert(alvo.erro); return; }
+  const target = document.getElementById('bulkTarget')?.value || 'todos';
+  let count = 0;
+  filtered.forEach((c, i) => {
+    const vazio = !String(c.codigo || '').trim();
+    const cb = document.querySelector(`.row-check[data-i="${i}"]`);
+    if (target === 'todos' || (target === 'vazias' && vazio) || (target === 'selecionadas' && cb && cb.checked)) {
+      c.codigo = alvo.codigo;
+      count++;
+    }
+  });
+  renderEstoque();
+  salvarEstoqueServidor();
+  renderIdpSelects();
+  alert('Código ' + alvo.codigo + ' aplicado em ' + count + ' itens.');
+}
+
+function dataRegistro(v) {
+  if (!v) return null;
+  const s = String(v).trim();
+  const m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})(?:[,\s]+(\d{2}):(\d{2}))?/);
+  if (m) return new Date(+m[3], +m[2] - 1, +m[1], +(m[4] || 0), +(m[5] || 0));
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function isoDe(v) {
+  const d = dataRegistro(v);
+  return d ? d.toISOString() : new Date().toISOString();
+}
+
+async function salvarEntradas() {
+  try { await salvarConfig('entradas', entradasHistorico); }
+  catch (e) { console.error(e); }
+}
+
+async function registrarEntradas(cartas) {
+  (cartas || []).forEach(c => {
+    entradasHistorico.push({
+      id: 'ent_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
+      data: isoDe(c.data),
+      codigo: c.codigo || '',
+      idp: idpDe(c.codigo),
+      nome: c.nome || '',
+      nomePt: c.nomePt || '',
+      qtd: parseFloat(c.qtd) || 0,
+      custo: parseFloat(c.custo) || 0,
+      pvs: parseFloat(c.pvs) || 0,
+      set: c.set || '',
+      extras: c.extras || '',
+      lang: c.lang || '',
+      cond: c.cond || '',
+      pasta: c.pasta || 'Geral'
+    });
+  });
+  await salvarEntradas();
+  renderIdpSelects();
+}
+
+async function semearEntradas() {
+  if (entradasHistorico.length) return;
+  const feito = await lerConfig('entradas-seed');
+  if (feito) return;
+  if (Array.isArray(estoque) && estoque.length) await registrarEntradas(estoque);
+  if (!entradasHistorico.length) return;
+  try { await salvarConfig('entradas-seed', true); } catch (e) {}
+}
+
+async function cancelarSaida(i) {
+  const p = pedidosHistorico[i];
+  if (!p || p.cancelada) return;
+  if (!confirm('Cancelar a saída ' + (p.codigo || '') + '? As cartas voltam ao estoque. A saída continua no histórico como cancelada e não entra no financeiro.')) return;
+  const senha = prompt('Senha de administrador');
+  if (senha !== senhaAdmin) { alert('Senha incorreta.'); return; }
+  (p.itens || []).forEach(it => {
+    if (!it.encontrado) return;
+    const qtd = parseFloat(it.qtd) || 0;
+    if (qtd <= 0) return;
+    let card = it.estoqueId ? estoque.find(c => String(c.id) === String(it.estoqueId)) : null;
+    if (!card) {
+      card = estoque.find(c => c.nome === it.nome && (c.set || '') === (it.set || '') && String(c.codigo || '') === String(it.codigoEntrada || '') && pastaDe(c.pasta) === pastaDe(it.pasta) && (c.lang || '') === (it.lang || '') && (c.cond || '') === (it.cond || ''));
+    }
+    if (card) card.qtd = (parseFloat(card.qtd) || 0) + qtd;
+    else estoque.push({
+      nome: it.nome, nomePt: it.nomePt || '', qtd, set: it.set || '', setCode: it.setCode || '',
+      cond: it.cond || '', lang: it.lang || '', extras: it.extras || '', pasta: pastaDe(it.pasta),
+      codigo: it.codigoEntrada || '', ml: it.ml || 0, custo: it.custo || 0, pvs: it.preco || 0, pvsManual: true,
+      liquidez: it.liquidez || 'C', desconto: it.desconto || 0, foil: !!it.foil, obs: it.obs || '',
+      data: new Date().toISOString().slice(0, 16).replace('T', ' '), cor: it.cor || '', raridade: it.raridade || ''
+    });
+  });
+  p.cancelada = true;
+  p.canceladaEm = new Date().toISOString();
+  try { await salvarSaidas(); }
+  catch (e) { alert('A tela marcou como cancelada, mas o histórico não gravou. ' + (e.message || '')); }
+  try { await salvarEstoqueServidor(true); }
+  catch (e) { alert('O histórico foi gravado, mas o estoque não voltou ao banco. Não recarregue. ' + (e.message || '')); }
+  filtered = [...estoque];
+  renderEstoque();
+  renderPastas();
+  renderHistorico();
+  alert('Saída cancelada. As cartas voltaram ao estoque.');
+}
+
+function ymdLocal(d) {
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+function chavePeriodo(d, grupo) {
+  const y = d.getFullYear();
+  const m = d.getMonth();
+  if (grupo === 'dia') return ymdLocal(d);
+  if (grupo === 'semana') {
+    const dt = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    dt.setDate(dt.getDate() - ((dt.getDay() + 6) % 7));
+    return ymdLocal(dt);
+  }
+  if (grupo === 'mes') return y + '-' + String(m + 1).padStart(2, '0');
+  if (grupo === 'trimestre') return y + '-T' + (Math.floor(m / 3) + 1);
+  if (grupo === 'semestre') return y + '-S' + (m < 6 ? 1 : 2);
+  return String(y);
+}
+
+function dentroDoPeriodo(d, ini, fim) {
+  if (!d) return false;
+  const t = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  if (ini && t < ini.getTime()) return false;
+  if (fim && t > fim.getTime()) return false;
+  return true;
+}
+
+function codigosConhecidos() {
+  const set = new Set();
+  if (Array.isArray(estoque)) estoque.forEach(c => { if (c.codigo) set.add(String(c.codigo).toUpperCase()); });
+  entradasHistorico.forEach(e => { if (e.codigo) set.add(String(e.codigo).toUpperCase()); });
+  pedidosHistorico.forEach(p => (p.itens || []).forEach(it => { if (it.codigoEntrada) set.add(String(it.codigoEntrada).toUpperCase()); }));
+  return set;
+}
+
+function passaFiltroCodigo(codigo, idp, cod) {
+  const c = String(codigo || '').toUpperCase();
+  if (cod && c !== cod) return false;
+  if (idp && idpDe(c) !== idp) return false;
+  return true;
+}
+
+function calcularFinanceiro() {
+  const grupo = document.getElementById('finGrupo')?.value || 'mes';
+  const idp = document.getElementById('finIdp')?.value || '';
+  const cod = (document.getElementById('finCodigo')?.value || '').trim().toUpperCase();
+  const di = document.getElementById('finDe')?.value;
+  const df = document.getElementById('finAte')?.value;
+  const ini = di ? new Date(di + 'T00:00:00') : null;
+  const fim = df ? new Date(df + 'T00:00:00') : null;
+  if (cod && !codigosConhecidos().has(cod)) return { erro: 'Esse código de entrada ainda não existe. Escolha um da lista.' };
+  if (cod && idp && !cod.startsWith(idp)) return { erro: 'Esse código não pertence ao IDP escolhido.' };
+  const periodos = {};
+  const saidas = [];
+  const entradas = [];
+  let faturamento = 0, custo = 0, lucro = 0, cancelado = 0, cartas = 0;
+  pedidosHistorico.forEach(p => {
+    const d = dataRegistro(p.quando || p.atualizado || p.data);
+    if (!dentroDoPeriodo(d, ini, fim)) return;
+    (p.itens || []).forEach(it => {
+      if (!it.encontrado) return;
+      if (!passaFiltroCodigo(it.codigoEntrada, idp, cod)) return;
+      const qtd = parseFloat(it.qtd) || 0;
+      const preco = parseFloat(it.preco) || 0;
+      const cu = parseFloat(it.custo) || 0;
+      const fat = qtd * preco;
+      const cus = qtd * cu;
+      const row = { data: d, saida: p.codigo || '', cliente: p.cliente || '', titulo: p.titulo || '', codigo: it.codigoEntrada || '', nome: it.nome || '', qtd, preco, custo: cu, total: fat, lucro: fat - cus, status: p.cancelada ? 'Cancelada' : 'Ativa' };
+      saidas.push(row);
+      if (p.cancelada) { cancelado += fat; return; }
+      faturamento += fat;
+      custo += cus;
+      lucro += fat - cus;
+      cartas += qtd;
+      const chave = chavePeriodo(d, grupo);
+      if (!periodos[chave]) periodos[chave] = { periodo: chave, faturamento: 0, custo: 0, lucro: 0, cartas: 0 };
+      periodos[chave].faturamento += fat;
+      periodos[chave].custo += cus;
+      periodos[chave].lucro += fat - cus;
+      periodos[chave].cartas += qtd;
+    });
+  });
+  entradasHistorico.forEach(e => {
+    const d = dataRegistro(e.data);
+    if (!dentroDoPeriodo(d, ini, fim)) return;
+    if (!passaFiltroCodigo(e.codigo, idp, cod)) return;
+    entradas.push({ data: d, codigo: e.codigo || '', nome: e.nome || '', qtd: parseFloat(e.qtd) || 0, custo: parseFloat(e.custo) || 0, total: (parseFloat(e.qtd) || 0) * (parseFloat(e.custo) || 0), pasta: e.pasta || '' });
+  });
+  const listaPeriodos = Object.values(periodos).sort((a, b) => String(a.periodo).localeCompare(String(b.periodo)));
+  listaPeriodos.forEach(p => {
+    p.faturamento = Math.round(p.faturamento * 100) / 100;
+    p.custo = Math.round(p.custo * 100) / 100;
+    p.lucro = Math.round(p.lucro * 100) / 100;
+  });
+  return {
+    periodos: listaPeriodos,
+    saidas: saidas.sort((a, b) => b.data - a.data),
+    entradas: entradas.sort((a, b) => b.data - a.data),
+    totais: {
+      faturamento: Math.round(faturamento * 100) / 100,
+      custo: Math.round(custo * 100) / 100,
+      lucro: Math.round(lucro * 100) / 100,
+      cancelado: Math.round(cancelado * 100) / 100,
+      cartas
+    }
+  };
+}
+
+function renderFinanceiro() {
+  const box = document.getElementById('finResumo');
+  if (!box) return;
+  const dados = calcularFinanceiro();
+  ultimoFinanceiro = dados;
+  if (dados.erro) {
+    box.innerHTML = `<div class="alert">${esc(dados.erro)}</div>`;
+    document.getElementById('finPeriodos').innerHTML = '';
+    document.getElementById('finSaidas').innerHTML = '';
+    document.getElementById('finEntradas').innerHTML = '';
+    return;
+  }
+  const t = dados.totais;
+  box.innerHTML = `<div class="stat"><div class="muted">Faturamento</div><strong>${formatMoney(t.faturamento)}</strong></div>
+    <div class="stat"><div class="muted">Custo das vendas</div><strong>${formatMoney(t.custo)}</strong></div>
+    <div class="stat"><div class="muted">Lucro</div><strong>${formatMoney(t.lucro)}</strong></div>
+    <div class="stat"><div class="muted">Cartas vendidas</div><strong>${t.cartas}</strong></div>
+    <div class="stat"><div class="muted">Canceladas (fora da conta)</div><strong>${formatMoney(t.cancelado)}</strong></div>`;
+  document.getElementById('finPeriodos').innerHTML = `<table><thead><tr><th>Período</th><th>Faturamento</th><th>Custo</th><th>Lucro</th><th>Cartas</th></tr></thead><tbody>`
+    + (dados.periodos.map(p => `<tr><td>${esc(p.periodo)}</td><td>${formatMoney(p.faturamento)}</td><td>${formatMoney(p.custo)}</td><td>${formatMoney(p.lucro)}</td><td>${p.cartas}</td></tr>`).join('') || '<tr><td colspan="5">Nenhuma venda nesse filtro.</td></tr>')
+    + '</tbody></table>';
+  document.getElementById('finSaidas').innerHTML = `<table><thead><tr><th>Data</th><th>Saída</th><th>Cliente</th><th>Código</th><th>Carta</th><th>Qtd</th><th>Preço</th><th>Custo</th><th>Total</th><th>Status</th></tr></thead><tbody>`
+    + (dados.saidas.map(s => `<tr><td>${esc(ymdLocal(s.data))}</td><td>${esc(s.saida)}</td><td>${esc(s.cliente)}</td><td>${esc(s.codigo || '-')}</td><td>${esc(s.nome)}</td><td>${s.qtd}</td><td>${formatMoney(s.preco)}</td><td>${formatMoney(s.custo)}</td><td>${formatMoney(s.total)}</td><td>${esc(s.status)}</td></tr>`).join('') || '<tr><td colspan="10">Nenhuma saída nesse filtro.</td></tr>')
+    + '</tbody></table>';
+  document.getElementById('finEntradas').innerHTML = `<table><thead><tr><th>Data</th><th>Código</th><th>Carta</th><th>Qtd</th><th>Custo unit.</th><th>Custo total</th><th>Pasta</th></tr></thead><tbody>`
+    + (dados.entradas.map(e => `<tr><td>${esc(ymdLocal(e.data))}</td><td>${esc(e.codigo || '-')}</td><td>${esc(e.nome)}</td><td>${e.qtd}</td><td>${formatMoney(e.custo)}</td><td>${formatMoney(e.total)}</td><td>${esc(e.pasta || '-')}</td></tr>`).join('') || '<tr><td colspan="7">Nenhuma entrada nesse filtro.</td></tr>')
+    + '</tbody></table>';
+}
+
+function exportarFinanceiro(tipo) {
+  const dados = calcularFinanceiro();
+  ultimoFinanceiro = dados;
+  if (dados.erro) { alert(dados.erro); return; }
+  const resumo = [['Período', 'Faturamento', 'Custo', 'Lucro', 'Cartas']].concat(dados.periodos.map(p => [p.periodo, p.faturamento, p.custo, p.lucro, p.cartas]));
+  resumo.push(['TOTAL', dados.totais.faturamento, dados.totais.custo, dados.totais.lucro, dados.totais.cartas]);
+  resumo.push(['Canceladas (não contabilizadas)', dados.totais.cancelado, '', '', '']);
+  const saidas = [['Data', 'Saída', 'Cliente', 'Código', 'Carta', 'Qtd', 'Preço', 'Custo', 'Total', 'Lucro', 'Status']].concat(dados.saidas.map(s => [ymdLocal(s.data), s.saida, s.cliente, s.codigo, s.nome, s.qtd, s.preco, s.custo, s.total, s.lucro, s.status]));
+  const entradas = [['Data', 'Código', 'Carta', 'Qtd', 'Custo unit.', 'Custo total', 'Pasta']].concat(dados.entradas.map(e => [ymdLocal(e.data), e.codigo, e.nome, e.qtd, e.custo, e.total, e.pasta]));
+  const nome = 'financeiro-' + ymdLocal(new Date());
+  if (tipo === 'xlsx') baixarXlsx([{ nome: 'Resumo', linhas: resumo }, { nome: 'Saidas', linhas: saidas }, { nome: 'Entradas', linhas: entradas }], nome + '.xlsx');
+  else baixarPdf('Financeiro Cozinha Offline', [{ titulo: 'Resumo', linhas: resumo }, { titulo: 'Saidas', linhas: saidas }, { titulo: 'Entradas', linhas: entradas }], nome + '.pdf');
+}
+
+function colExcel(n) {
+  let s = '';
+  n += 1;
+  while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); }
+  return s;
+}
+
+function xmlEsc(s) {
+  return String(s ?? '').replace(/&/g, '&').replace(/</g, '<').replace(/>/g, '>');
+}
+
+function planilhaXml(linhas) {
+  const rows = linhas.map((row, ri) => {
+    const cells = row.map((val, ci) => {
+      const ref = colExcel(ci) + (ri + 1);
+      if (typeof val === 'number' && Number.isFinite(val)) return `<c r="${ref}"><v>${val}</v></c>`;
+      return `<c r="${ref}" t="inlineStr"><is><t xml:space="preserve">${xmlEsc(val)}</t></is></c>`;
+    }).join('');
+    return `<row r="${ri + 1}">${cells}</row>`;
+  }).join('');
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${rows}</sheetData></worksheet>`;
+}
+
+let tabelaCrc = null;
+function crc32Bytes(arr) {
+  if (!tabelaCrc) {
+    tabelaCrc = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) {
+      let c = n;
+      for (let k = 0; k < 8; k++) c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
+      tabelaCrc[n] = c >>> 0;
+    }
+  }
+  let c = 0xffffffff;
+  for (let i = 0; i < arr.length; i++) c = tabelaCrc[(c ^ arr[i]) & 255] ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
+}
+
+function u16(n) { return [n & 255, (n >> 8) & 255]; }
+function u32(n) { return [n & 255, (n >> 8) & 255, (n >> 16) & 255, (n >> 24) & 255]; }
+
+function zipArmazenado(arquivos) {
+  const partes = [];
+  const centrais = [];
+  let offset = 0;
+  arquivos.forEach(arq => {
+    const nome = new TextEncoder().encode(arq.nome);
+    const dados = new TextEncoder().encode(arq.texto);
+    const crc = crc32Bytes(dados);
+    const local = [].concat([0x50, 0x4b, 0x03, 0x04], u16(20), u16(0), u16(0), u16(0), u16(0), u32(crc), u32(dados.length), u32(dados.length), u16(nome.length), u16(0));
+    partes.push(new Uint8Array(local), nome, dados);
+    const central = [].concat([0x50, 0x4b, 0x01, 0x02], u16(20), u16(20), u16(0), u16(0), u16(0), u16(0), u32(crc), u32(dados.length), u32(dados.length), u16(nome.length), u16(0), u16(0), u16(0), u16(0), u32(0), u32(offset));
+    centrais.push(new Uint8Array(central), nome);
+    offset += local.length + nome.length + dados.length;
+  });
+  let centralIni = offset;
+  const centralBytes = centrais.reduce((s, p) => s + p.length, 0);
+  const fim = [].concat([0x50, 0x4b, 0x05, 0x06], u16(0), u16(0), u16(arquivos.length), u16(arquivos.length), u32(centralBytes), u32(centralIni), u16(0));
+  const tudo = partes.concat(centrais, [new Uint8Array(fim)]);
+  const tam = tudo.reduce((s, p) => s + p.length, 0);
+  const out = new Uint8Array(tam);
+  let p = 0;
+  tudo.forEach(b => { out.set(b, p); p += b.length; });
+  return out;
+}
+
+function baixarBytes(bytes, nome, tipo) {
+  const blob = new Blob([bytes], { type: tipo });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = nome;
+  a.click();
+}
+
+function baixarXlsx(abas, nome) {
+  const sheets = abas.map((aba, i) => planilhaXml(aba.linhas));
+  const tipos = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>${abas.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('')}</Types>`;
+  const rels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`;
+  const wb = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${abas.map((aba, i) => `<sheet name="${xmlEsc(aba.nome)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join('')}</sheets></workbook>`;
+  const wbRels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${abas.map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join('')}</Relationships>`;
+  const arquivos = [
+    { nome: '[Content_Types].xml', texto: tipos },
+    { nome: '_rels/.rels', texto: rels },
+    { nome: 'xl/workbook.xml', texto: wb },
+    { nome: 'xl/_rels/workbook.xml.rels', texto: wbRels }
+  ];
+  sheets.forEach((xml, i) => arquivos.push({ nome: 'xl/worksheets/sheet' + (i + 1) + '.xml', texto: xml }));
+  baixarBytes(zipArmazenado(arquivos), nome, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+}
+
+function baixarPdf(titulo, blocos, nome) {
+  if (!jsPDF) { alert('O gerador de PDF ainda não carregou. Espere um instante e tente de novo.'); return; }
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+  blocos.forEach((b, i) => {
+    if (i) doc.addPage();
+    doc.setFontSize(14);
+    doc.text(titulo + ' — ' + b.titulo, 28, 32);
+    const head = [b.linhas[0].map(c => String(c ?? ''))];
+    const body = b.linhas.slice(1).map(r => r.map(c => typeof c === 'number' ? String(c).replace('.', ',') : String(c ?? '')));
+    doc.autoTable({
+      startY: 44,
+      head,
+      body,
+      styles: { fontSize: 8, cellPadding: 3 },
+      headStyles: { fillColor: [26, 42, 50] },
+      margin: { left: 28, right: 28 }
+    });
+  });
+  doc.save(nome);
+}
+
+function prepararFinanceiro() {
+  const de = document.getElementById('finDe');
+  const ate = document.getElementById('finAte');
+  const hoje = new Date();
+  if (ate && !ate.value) ate.value = ymdLocal(hoje);
+  if (de && !de.value) de.value = hoje.getFullYear() + '-01-01';
+  renderIdpSelects();
+}
 
 document.addEventListener('DOMContentLoaded', async () => {
   await carregarRegrasPVS();
@@ -3411,6 +3950,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   renderPastas();
   renderHistorico();
   renderOrcamentosSalvos();
+  prepararFinanceiro();
 });
 function linhaCardPopup(card, extra) {
   return `<strong>${esc(card.nome)}</strong>${extra || ''}<br>LLP: ${formatMoney(card.ml)} | PVS: ${formatMoney(card.pvs)}<br>Idioma: ${esc(card.lang) || '-'} | Estado: ${esc(card.cond) || '-'}<br>Extras: ${esc(card.extras) || '-'} | Pasta: ${esc(card.pasta) || '-'}<br>Qtd em estoque: ${card.qtd}`;
