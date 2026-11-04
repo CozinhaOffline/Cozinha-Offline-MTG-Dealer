@@ -102,7 +102,7 @@
   <img src="logo.png" alt="Cozinha Offline Store">
   <div>
     <h1>Cozinha Offline Store</h1>
-    <p>Gestão de estoque, pedidos e orçamentos · versão 03/11</p>
+    <p>Gestão de estoque, pedidos e orçamentos · versão 04/11</p>
   </div>
 </header>
 <nav>
@@ -163,6 +163,7 @@
             <option value="cond">Estado</option>
             <option value="lang">Idioma</option>
             <option value="extras">Extras</option>
+            <option value="set">Edição</option>
         <option value="pasta">Pasta</option>
           </select>
         </div>
@@ -298,6 +299,7 @@
             <option value="cond">Estado</option>
             <option value="lang">Idioma</option>
             <option value="extras">Extras</option>
+            <option value="set">Edição</option>
           </select>
         </div>
         <div><label>Valor</label><input type="text" id="bulkValueModal" placeholder="-20 ou 30"></div>
@@ -2311,7 +2313,7 @@ function setViewMode(mode) {
   renderEstoque();
 }
 
-const LOCKED = ['nomePt','nome','set','setCode','cor','ml'];
+const LOCKED = ['nomePt','nome','setCode','cor','ml'];
 const SIMPLE_COLS = ['qtd','nome','set','lang','cond','ml','pvs'];
 
 function renderEstoque() {
