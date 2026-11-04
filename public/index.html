@@ -102,7 +102,7 @@
   <img src="logo.png" alt="Cozinha Offline Store">
   <div>
     <h1>Cozinha Offline Store</h1>
-    <p>Gestão de estoque, pedidos e orçamentos · versão 04/11</p>
+    <p>Gestão de estoque, pedidos e orçamentos · versão 04/11-2</p>
   </div>
 </header>
 <nav>
@@ -164,6 +164,7 @@
             <option value="lang">Idioma</option>
             <option value="extras">Extras</option>
             <option value="set">Edição</option>
+            <option value="setCode">Edição (sigla)</option>
         <option value="pasta">Pasta</option>
           </select>
         </div>
@@ -300,6 +301,7 @@
             <option value="lang">Idioma</option>
             <option value="extras">Extras</option>
             <option value="set">Edição</option>
+            <option value="setCode">Edição (sigla)</option>
           </select>
         </div>
         <div><label>Valor</label><input type="text" id="bulkValueModal" placeholder="-20 ou 30"></div>
@@ -1645,7 +1647,9 @@ function renderModalRows() {
       if (k === 'ml' || k === 'custo' || k === 'pvs') v = parseMoney(v);
       else if (k === 'desconto') v = parsePct(v);
       else if (k === 'qtd') v = parseInt(v) || 1;
+      else if (k === 'setCode') v = String(v).trim().toLowerCase();
       pendingImport[i][k] = v;
+      if (k === 'set' || k === 'setCode') pendingImport[i].scryfallId = '';
       if (k === 'desconto' || k === 'ml' || k === 'liquidez') {
         aplicarCalculos(pendingImport[i]);
         renderModalRows();
@@ -1661,12 +1665,14 @@ function aplicarBulkModal() {
   if (val === '') { alert('Informe o valor.'); return; }
   if (field === 'desconto') val = parsePct(val);
   else if (field === 'qtd') val = parseInt(val) || 1;
+  else if (field === 'setCode') val = val.trim().toLowerCase();
   let count = 0;
   pendingImport.forEach((c, i) => {
     const isEmpty = !c[field] && c[field] !== 0;
     const selected = document.querySelector(`#modalBody tr[data-i="${i}"] input.row-check`)?.checked;
     if (target === 'todos' || (target === 'vazias' && isEmpty) || (target === 'selecionadas' && selected)) {
       c[field] = val;
+      if (field === 'set' || field === 'setCode') c.scryfallId = '';
       if (field === 'desconto' || field === 'liquidez') aplicarCalculos(c);
       count++;
     }
@@ -2313,7 +2319,7 @@ function setViewMode(mode) {
   renderEstoque();
 }
 
-const LOCKED = ['nomePt','nome','setCode','cor','ml'];
+const LOCKED = ['nomePt','nome','cor','ml'];
 const SIMPLE_COLS = ['qtd','nome','set','lang','cond','ml','pvs'];
 
 function renderEstoque() {
@@ -2402,13 +2408,17 @@ function renderEstoque() {
       if (k === 'ml' || k === 'custo' || k === 'pvs') v = parseMoney(v);
       else if (k === 'desconto') v = parsePct(v);
       else if (k === 'qtd') v = parseInt(v) || 1;
+      else if (k === 'setCode') v = v.trim().toLowerCase();
       filtered[i][k] = v;
       const orig = estoque.findIndex(x => x === filtered[i]);
       if (orig >= 0) estoque[orig][k] = v;
+      if (k === 'set' || k === 'setCode') filtered[i].scryfallId = '';
       if (k === 'pvs') filtered[i].pvsManual = true;
-      if (k === 'desconto' || k === 'ml' || k === 'liquidez') {
-        filtered[i].pvsManual = false;
-        aplicarCalculos(filtered[i]);
+      if (k === 'desconto' || k === 'ml' || k === 'liquidez' || k === 'setCode') {
+        if (k !== 'setCode') {
+          filtered[i].pvsManual = false;
+          aplicarCalculos(filtered[i]);
+        }
         renderEstoque();
       }
       salvarEstoqueServidor();
@@ -2477,6 +2487,7 @@ function aplicarBulk() {
   if (field === 'desconto') val = parsePct(val);
   else if (field === 'pvs' || field === 'ml' || field === 'custo') val = parseMoney(val);
   else if (['qtd'].includes(field)) val = parseInt(val) || 1;
+  else if (field === 'setCode') val = val.trim().toLowerCase();
   let count = 0;
   filtered.forEach((c, i) => {
     const isEmpty = !c[field] && c[field] !== 0;
@@ -2484,6 +2495,7 @@ function aplicarBulk() {
     const selected = cb?.checked;
     if (target === 'todos' || (target === 'vazias' && isEmpty) || (target === 'selecionadas' && selected)) {
       c[field] = val;
+      if (field === 'set' || field === 'setCode') c.scryfallId = '';
       if (field === 'pvs') c.pvsManual = true;
       if (field === 'desconto' || field === 'liquidez' || field === 'ml') {
         c.pvsManual = false;
