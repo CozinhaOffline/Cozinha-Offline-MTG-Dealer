@@ -102,7 +102,7 @@
   <img src="logo.png" alt="Cozinha Offline Store">
   <div>
     <h1>Cozinha Offline Store</h1>
-    <p>Gestão de estoque, pedidos e orçamentos · versão 05/11</p>
+    <p>Gestão de estoque, pedidos e orçamentos · versão 06/11</p>
   </div>
 </header>
 <nav>
@@ -365,15 +365,23 @@
   <div id="deckbuilder" class="tab">
     <div class="card">
       <h2>Deckbuilder de Commander</h2>
-      <p class="muted">Monta uma lista de 100 cartas com o que o EDHREC mostra para o comandante. Cartas do seu estoque entram primeiro e o orçamento usa o PVS delas. O que você não tem fica marcado como sugestão. A escolha criativa com IA entra numa etapa seguinte.</p>
+      <p class="muted">Monta uma lista de 100 cartas com o que o EDHREC mostra para o comandante. Cartas do seu estoque entram primeiro e o orçamento usa o PVS delas. Completar deck lê o texto oficial das cartas e sugere, no seu estoque, peças de função parecida sem sair das cores do comandante.</p>
       <div class="row">
         <div class="col"><label>Comandante (nome em inglês)</label><input type="text" id="dbComandante" list="listaNomesDeck" placeholder="Atraxa, Praetors' Voice"></div>
         <div class="col"><label>Orçamento (R$, só do que está no estoque)</label><input type="number" id="dbOrcamento" min="0" step="0.01" placeholder="Vazio = sem limite"></div>
       </div>
       <label>Cartas-chave (uma por linha, em inglês)</label>
       <textarea id="dbChaves" placeholder="1 Sol Ring&#10;1 Doubling Season"></textarea>
+      <label>Não incluir (uma por linha). Estas cartas ficam de fora mesmo que estejam no EDHREC, no estoque ou no orçamento.</label>
+      <textarea id="dbExcluir" placeholder="Sol Ring&#10;Cyclonic Rift"></textarea>
       <label style="display:flex;gap:0.45rem;align-items:center;margin:0.4rem 0 0.8rem;"><input type="checkbox" id="dbPriorizar" checked> Priorizar cartas que já estão no estoque</label>
       <button class="primary" type="button" onclick="montarDeck()">Buscar no EDHREC e montar deck</button>
+      <div id="dbProgresso" style="display:none;margin-top:0.7rem;">
+        <div style="height:10px;background:#0e141b;border:1px solid var(--borda);border-radius:6px;overflow:hidden;">
+          <div id="dbProgressoBar" style="height:100%;width:0;background:var(--vermelho);"></div>
+        </div>
+        <div id="dbProgressoTxt" class="muted" style="margin-top:0.3rem;"></div>
+      </div>
       <div id="dbStatus" class="muted" style="margin-top:0.6rem;"></div>
       <div id="dbResultado" style="display:none;margin-top:1rem;"></div>
       <datalist id="listaNomesDeck"></datalist>
@@ -4170,6 +4178,7 @@ function prepararFinanceiro() {
 }
 
 let deckAtual = null;
+let sugestoesDeck = [];
 const BASICOS_COR = { W: 'Plains', U: 'Island', B: 'Swamp', R: 'Mountain', G: 'Forest' };
 const NOMES_BASICOS = new Set(['plains', 'island', 'swamp', 'mountain', 'forest']);
 
@@ -4199,13 +4208,14 @@ function inclusaoEdh(c) {
   return c && c.total ? (c.decks || 0) / c.total : 0;
 }
 
-function montarListaDeck(dados, chaves, orcamento, priorizar) {
+function montarListaDeck(dados, chaves, orcamento, priorizar, excluir) {
   const cont = dados.contagens || {};
   const porTag = {};
   (dados.listas || []).forEach(l => { porTag[l.tag] = l.cartas || []; });
   const itens = [];
   const usado = new Set();
   let gasto = 0;
+  excluir = excluir || new Set();
 
   function cabe(valor, forcar) {
     if (forcar || orcamento == null || !isFinite(orcamento)) return true;
@@ -4245,12 +4255,13 @@ function montarListaDeck(dados, chaves, orcamento, priorizar) {
     return '';
   }
 
-  function add(nome, categoria, meta, forcar, qtd) {
+  function add(nome, categoria, meta, forcar, qtd, ignorarExcluir) {
     qtd = qtd || 1;
     const info = infoEstoqueDeck(nome);
     const nomeFinal = info ? info.nome : nome;
     const chave = normNome(nomeFinal);
     if (!chave) return false;
+    if (!ignorarExcluir && (excluir.has(normNome(nome)) || excluir.has(chave))) return false;
     if (usado.has(chave)) {
       const ja = itens.find(it => normNome(it.nome) === chave);
       if (ja && NOMES_BASICOS.has(chave)) {
@@ -4286,7 +4297,7 @@ function montarListaDeck(dados, chaves, orcamento, priorizar) {
     return true;
   }
 
-  add(dados.nome, 'Comandante', acharMeta(dados.nome), true, 1);
+  add(dados.nome, 'Comandante', acharMeta(dados.nome), true, 1, true);
   chaves.forEach(ch => {
     const info = infoEstoqueDeck(ch.nome);
     const nome = info ? info.nome : ch.nome;
@@ -4378,14 +4389,52 @@ function montarListaDeck(dados, chaves, orcamento, priorizar) {
   return { itens, gasto };
 }
 
+let deckSort = null;
+
+function valorOrdemDeck(it, key) {
+  if (key === 'qtd') return it.qtd || 0;
+  if (key === 'nome') return it.nome || '';
+  if (key === 'categoria') return it.categoria || '';
+  if (key === 'inclusao') return it.inclusao == null ? null : it.inclusao;
+  if (key === 'estoque') return it.noEstoque ? (it.qtdNoEstoque || 0) : -1;
+  if (key === 'pasta') return it.pasta || '';
+  if (key === 'pvs') return it.pvs == null ? null : it.pvs;
+  return '';
+}
+
+function ordenarDeckPor(key) {
+  if (!deckSort || deckSort.key !== key) deckSort = { key, dir: (key === 'nome' || key === 'categoria' || key === 'pasta') ? 1 : -1 };
+  else deckSort.dir *= -1;
+  renderDeck();
+}
+
+function thDeck(label, key) {
+  const ativo = deckSort && deckSort.key === key;
+  const seta = ativo ? (deckSort.dir > 0 ? ' ↑' : ' ↓') : '';
+  return `<th style="cursor:pointer" onclick="ordenarDeckPor('${key}')">${label}${seta}</th>`;
+}
+
 function renderDeck() {
   const box = document.getElementById('dbResultado');
   if (!deckAtual) { box.style.display = 'none'; return; }
   const d = deckAtual;
-  const ordem = ['Comandante', 'Carta-chave', 'Criatura', 'Instant', 'Feitiço', 'Artefato de mana', 'Artefato', 'Encantamento', 'Planeswalker', 'Terreno', 'Terreno básico', 'Complemento'];
-  const itens = d.itens.slice().sort((a, b) => ordem.indexOf(a.categoria) - ordem.indexOf(b.categoria) || a.nome.localeCompare(b.nome));
-  const qtd = itens.reduce((s, it) => s + it.qtd, 0);
-  const noEstoque = itens.reduce((s, it) => s + (it.qtdNoEstoque || 0), 0);
+  const ordem = ['Comandante', 'Carta-chave', 'Criatura', 'Instant', 'Feitiço', 'Artefato de mana', 'Artefato', 'Encantamento', 'Planeswalker', 'Terreno', 'Terreno básico', 'Complemento', 'Substituto'];
+  const itens = d.itens.slice().sort((a, b) => {
+    if (deckSort) {
+      const va = valorOrdemDeck(a, deckSort.key);
+      const vb = valorOrdemDeck(b, deckSort.key);
+      const vaN = va == null || va === '';
+      const vbN = vb == null || vb === '';
+      if (vaN && vbN) return 0;
+      if (vaN) return 1;
+      if (vbN) return -1;
+      if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * deckSort.dir;
+      return String(va).localeCompare(String(vb), 'pt') * deckSort.dir;
+    }
+    return ordem.indexOf(a.categoria) - ordem.indexOf(b.categoria) || a.nome.localeCompare(b.nome);
+  });
+  const qtd = d.itens.reduce((s, it) => s + it.qtd, 0);
+  const noEstoque = d.itens.reduce((s, it) => s + (it.qtdNoEstoque || 0), 0);
   const faltam = qtd - noEstoque;
   const limite = d.orcamento == null ? 'sem limite' : formatMoney(d.orcamento);
   const estourou = d.orcamento != null && d.gasto > d.orcamento + 0.001;
@@ -4396,8 +4445,9 @@ function renderDeck() {
     <button class="secondary small" type="button" onclick="copiarDeck(false)">Copiar lista completa</button>
     <button class="secondary small" type="button" onclick="copiarDeck(true)">Copiar só o que temos</button>
     <button class="primary small" type="button" onclick="deckParaPedidos()">Levar o que temos para Pedidos</button>
+    <button class="primary small" type="button" id="btnCompletarDeck" onclick="completarDeck()">Completar deck</button>
   </div>`;
-  html += `<div style="overflow:auto;"><table><thead><tr><th>Qtd</th><th>Carta</th><th>Função</th><th>EDHREC</th><th>Estoque</th><th>Pasta</th><th>PVS</th><th>Subtotal</th></tr></thead><tbody>`;
+  html += `<div style="overflow:auto;"><table><thead><tr>${thDeck('Qtd','qtd')}${thDeck('Carta','nome')}${thDeck('Função','categoria')}${thDeck('EDHREC','inclusao')}${thDeck('Estoque','estoque')}${thDeck('Pasta','pasta')}${thDeck('PVS','pvs')}<th>Subtotal</th></tr></thead><tbody>`;
   itens.forEach(it => {
     const pct = it.inclusao == null ? '—' : Math.round(it.inclusao * 100) + '%';
     const est = !it.noEstoque ? 'não temos' : (it.foraOrcamento ? 'no estoque, fora do orçamento' : `${it.qtdNoEstoque} un.`);
@@ -4405,8 +4455,22 @@ function renderDeck() {
     html += `<tr><td>${it.qtd}</td><td class="card-name" data-nome="${esc(it.nome)}">${esc(it.nome)}</td><td>${esc(it.categoria)}</td><td>${pct}</td><td>${est}</td><td>${esc(it.pasta || '—')}</td><td>${it.pvs == null ? '—' : formatMoney(it.pvs)}</td><td>${sub}</td></tr>`;
   });
   html += '</tbody></table></div>';
+  html += renderSugestoesDeck();
   box.innerHTML = html;
   box.style.display = 'block';
+}
+
+function setProgressoDeck(pct, txt) {
+  const box = document.getElementById('dbProgresso');
+  if (!box) return;
+  box.style.display = 'block';
+  document.getElementById('dbProgressoBar').style.width = Math.max(0, Math.min(100, pct)) + '%';
+  document.getElementById('dbProgressoTxt').textContent = txt || '';
+}
+
+function fimProgressoDeck() {
+  const box = document.getElementById('dbProgresso');
+  if (box) box.style.display = 'none';
 }
 
 async function montarDeck() {
@@ -4416,27 +4480,311 @@ async function montarDeck() {
   const orcamento = orcRaw === '' ? null : parseFloat(orcRaw);
   if (orcRaw !== '' && !(orcamento >= 0)) { alert('Orçamento inválido.'); return; }
   const chaves = document.getElementById('dbChaves').value.split('\n').map(lerLinhaLista).filter(x => x.nome);
+  const excluir = new Set(document.getElementById('dbExcluir').value.split('\n').map(l => normNome(lerLinhaLista(l).nome)).filter(Boolean));
   const priorizar = document.getElementById('dbPriorizar').checked;
   const status = document.getElementById('dbStatus');
-  status.textContent = 'Consultando o EDHREC...';
+  status.textContent = '';
   document.getElementById('dbResultado').style.display = 'none';
+  sugestoesDeck = [];
+  deckSort = null;
+  setProgressoDeck(12, 'Consultando o EDHREC...');
   try {
     const resp = await fetch('/api/edhrec?comandante=' + encodeURIComponent(nome));
+    setProgressoDeck(48, 'Recebendo as cartas mais usadas...');
     const texto = await resp.text();
     let dados;
     try { dados = JSON.parse(texto); } catch (e) {
       throw new Error('O servidor ainda não tem a consulta do EDHREC. Atualize o server.js e espere o Render ficar Live.');
     }
     if (!resp.ok) throw new Error(dados.error || 'Falha ao consultar o EDHREC');
-    const deck = montarListaDeck(dados, chaves, orcamento, priorizar);
+    setProgressoDeck(72, 'Cruzando com o estoque e o orçamento...');
+    const deck = montarListaDeck(dados, chaves, orcamento, priorizar, excluir);
     deck.meta = dados;
     deck.orcamento = orcamento;
     deckAtual = deck;
+    setProgressoDeck(100, 'Lista pronta.');
     renderDeck();
-    status.textContent = '';
+    setTimeout(fimProgressoDeck, 700);
   } catch (err) {
+    fimProgressoDeck();
     status.textContent = err.message || 'Não foi possível montar o deck.';
   }
+}
+
+const PAPEIS_CARTA = [
+  { id: 'rampa', nome: 'rampa', re: /add \{[WUBRGC]\}|search your library for .{0,50}land|land card onto the battlefield/i, q: '(o:"add {" OR (o:"search your library" o:land) OR o:"land onto the battlefield")' },
+  { id: 'compra', nome: 'compra de carta', re: /draw (a|an|one|two|three|four|x|\d+) cards?/i, q: 'o:"draw" (t:instant OR t:sorcery OR t:creature OR t:enchantment OR t:artifact OR t:planeswalker)' },
+  { id: 'remocao', nome: 'remoção', re: /destroy target|exile target (creature|permanent|artifact|enchantment|planeswalker)/i, q: '(o:"destroy target" OR o:"exile target")' },
+  { id: 'wipe', nome: 'limpeza de mesa', re: /destroy all|exile all|each creature gets|all creatures get -/i, q: '(o:"destroy all" OR o:"exile all" OR o:"all creatures")' },
+  { id: 'counter', nome: 'counter', re: /counter target/i, q: 'o:"counter target"' },
+  { id: 'tutor', nome: 'tutor', re: /search your library for a (?!basic land)/i, q: 'o:"search your library"' },
+  { id: 'protecao', nome: 'proteção', re: /hexproof|indestructible|shroud|protection from/i, q: '(o:hexproof OR o:indestructible OR o:shroud)' },
+  { id: 'recursao', nome: 'recursão', re: /graveyard/i, q: 'o:graveyard' },
+  { id: 'token', nome: 'tokens', re: /create .{0,40}token/i, q: '(o:"create" o:token)' },
+  { id: 'anthem', nome: 'buff de criaturas', re: /creatures you control get \+/i, q: 'o:"creatures you control get"' },
+  { id: 'contador', nome: 'contadores', re: /\+1\/\+1 counter/i, q: 'o:"+1/+1 counter"' },
+  { id: 'vida', nome: 'vida', re: /gain .{0,24}life/i, q: '(o:"gain" o:life)' }
+];
+const STOP_ORACLE = new Set('a an the of to and or you your target this that with from for each all whenever may until end step turn card cards creature creatures permanent spell onto into then they their its it are is be if when where control controlled battlefield library hand graveyard damage player opponent'.split(' '));
+
+function esperar(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function textoOracle(card) {
+  if (!card) return '';
+  if (card.oracle_text) return card.oracle_text;
+  if (Array.isArray(card.card_faces)) return card.card_faces.map(f => f.oracle_text || '').join('\n');
+  return '';
+}
+
+function tipoPrincipal(card) {
+  const linha = card.type_line || (card.card_faces && card.card_faces[0] && card.card_faces[0].type_line) || '';
+  const achou = linha.split('—')[0].split(/\s+/).find(p => ['Creature', 'Instant', 'Sorcery', 'Artifact', 'Enchantment', 'Planeswalker', 'Land', 'Battle'].includes(p));
+  return achou || 'Outro';
+}
+
+function papeisDaCarta(card) {
+  const texto = textoOracle(card);
+  return PAPEIS_CARTA.filter(p => p.re.test(texto)).map(p => p.id);
+}
+
+function tokensOracle(texto) {
+  return (String(texto || '').toLowerCase().match(/[a-z0-9+]{3,}/g) || []).filter(w => !STOP_ORACLE.has(w));
+}
+
+function corIdentidadeOk(card, cores) {
+  const id = card.color_identity || [];
+  if (!cores.length) return id.length === 0;
+  return id.every(c => cores.includes(c));
+}
+
+function semelhancaCartas(alvo, candidato) {
+  const pa = new Set(papeisDaCarta(alvo));
+  const pb = papeisDaCarta(candidato);
+  const comuns = pb.filter(id => pa.has(id));
+  const ta = tokensOracle(textoOracle(alvo));
+  const tb = tokensOracle(textoOracle(candidato));
+  const A = new Set(ta);
+  const B = new Set(tb);
+  let inter = 0;
+  A.forEach(x => { if (B.has(x)) inter++; });
+  const jacc = inter / (A.size + B.size - inter || 1);
+  const mesmoTipo = tipoPrincipal(alvo) === tipoPrincipal(candidato);
+  const ka = new Set(alvo.keywords || []);
+  const kb = candidato.keywords || [];
+  const kw = kb.filter(k => ka.has(k)).length;
+  let score = comuns.length * 5 + (mesmoTipo ? 3 : 0) + kw * 2 + jacc * 8;
+  if (!comuns.length && !mesmoTipo) score -= 3;
+  const nomes = comuns.map(id => (PAPEIS_CARTA.find(p => p.id === id) || {}).nome).filter(Boolean);
+  const motivo = nomes.length
+    ? 'Função parecida: ' + nomes.join(', ') + '.'
+    : (mesmoTipo ? 'Mesmo tipo e efeito parecido no texto.' : 'Efeito parecido no texto da carta.');
+  return { score, motivo, comuns };
+}
+
+async function scryfallJson(url, opcoes) {
+  const resp = await fetch(url, opcoes);
+  if (resp.status === 429) {
+    await esperar(1200);
+    return scryfallJson(url, opcoes);
+  }
+  if (!resp.ok) return null;
+  return resp.json();
+}
+
+async function scryfallColecao(nomes) {
+  const achadas = [];
+  for (let i = 0; i < nomes.length; i += 75) {
+    const identifiers = nomes.slice(i, i + 75).map(nome => ({ name: nome }));
+    const data = await scryfallJson('https://api.scryfall.com/cards/collection', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identifiers })
+    });
+    (data && data.data || []).forEach(c => achadas.push(c));
+    if (i + 75 < nomes.length) await esperar(90);
+  }
+  return achadas;
+}
+
+async function scryfallBusca(q) {
+  let url = 'https://api.scryfall.com/cards/search?unique=cards&order=edhrec&q=' + encodeURIComponent(q);
+  const cartas = [];
+  for (let pagina = 0; pagina < 2 && url; pagina++) {
+    const data = await scryfallJson(url);
+    if (!data) break;
+    (data.data || []).forEach(c => cartas.push(c));
+    url = data.has_more ? data.next_page : '';
+    if (url) await esperar(90);
+  }
+  return cartas;
+}
+
+function consultaPapel(papel, cores) {
+  const base = PAPEIS_CARTA.find(p => p.id === papel);
+  const filtroCor = cores.length ? ` ci<=${cores.join('').toLowerCase()}` : ' -id:w -id:u -id:b -id:r -id:g';
+  return (base ? base.q : 't:creature') + filtroCor + ' legal:commander game:paper';
+}
+
+function renderSugestoesDeck() {
+  if (!sugestoesDeck.length) return '';
+  const dentro = sugestoesDeck.filter(s => s.dentro);
+  const fora = sugestoesDeck.filter(s => !s.dentro);
+  const bloco = (titulo, lista) => {
+    if (!lista.length) return '';
+    let html = `<h3 style="margin-top:1rem;">${titulo}</h3><div style="overflow:auto;"><table><thead><tr><th>No lugar de</th><th>Sugestão do estoque</th><th>Função</th><th>Por quê</th><th>Pasta</th><th>PVS</th><th></th></tr></thead><tbody>`;
+    lista.forEach(s => {
+      html += `<tr><td>${esc(s.substitui)}</td><td class="card-name" data-nome="${esc(s.nome)}">${esc(s.nome)}</td><td>${esc(s.categoria)}</td><td>${esc(s.motivo)}</td><td>${esc(s.pasta || '—')}</td><td>${formatMoney(s.pvs || 0)}</td><td><button class="primary small" type="button" onclick="adicionarSubstituto(${s.id})">Adicionar ao deck</button></td></tr>`;
+    });
+    return html + '</tbody></table></div>';
+  };
+  return `<div class="card" style="margin-top:1rem;padding:1rem;"><h2>Completar com o estoque</h2><p class="muted">Sugestões lidas a partir do texto oficial da carta, só dentro das cores do comandante. Primeiro as que cabem no orçamento restante.</p>${bloco('Dentro do orçamento restante', dentro)}${bloco('Fora do orçamento', fora)}</div>`;
+}
+
+async function completarDeck() {
+  if (!deckAtual) { alert('Monte um deck antes.'); return; }
+  const faltam = deckAtual.itens.filter(it => it.categoria !== 'Comandante' && !it.noEstoque);
+  if (!faltam.length) { alert('Todas as cartas desta lista já estão no estoque.'); return; }
+  const btn = document.getElementById('btnCompletarDeck');
+  if (btn) btn.disabled = true;
+  const status = document.getElementById('dbStatus');
+  status.textContent = '';
+  sugestoesDeck = [];
+  try {
+    const cores = deckAtual.meta.cores || [];
+    const excluir = new Set(document.getElementById('dbExcluir').value.split('\n').map(l => normNome(lerLinhaLista(l).nome)).filter(Boolean));
+    const noDeck = new Set(deckAtual.itens.map(it => normNome(it.nome)));
+    const estoqueMap = new Map();
+    (estoque || []).forEach(c => {
+      if (!(parseFloat(c.qtd) > 0) || !c.nome) return;
+      const k = normNome(c.nome);
+      const pvs = parseFloat(c.pvs) || 0;
+      const prev = estoqueMap.get(k);
+      if (!prev) estoqueMap.set(k, { nome: c.nome, pvs, qtd: parseInt(c.qtd, 10) || 0, pasta: c.pasta || 'Geral' });
+      else {
+        prev.qtd += parseInt(c.qtd, 10) || 0;
+        if (pvs < prev.pvs) { prev.pvs = pvs; prev.pasta = c.pasta || prev.pasta; prev.nome = c.nome; }
+      }
+    });
+    setProgressoDeck(8, 'Lendo o texto das cartas que faltam...');
+    const oficiais = await scryfallColecao([...new Set(faltam.map(it => it.nome))]);
+    const porNome = new Map(oficiais.map(c => [normNome(c.name), c]));
+    const restante = deckAtual.orcamento == null ? null : Math.max(0, deckAtual.orcamento - deckAtual.gasto);
+    const buscas = new Map();
+    const papeisUsados = new Set();
+    faltam.forEach(it => {
+      if (NOMES_BASICOS.has(normNome(it.nome))) return;
+      const card = porNome.get(normNome(it.nome));
+      const papeis = card ? papeisDaCarta(card) : [];
+      (papeis.length ? papeis : ['tipo:' + (card ? tipoPrincipal(card) : it.categoria)]).forEach(p => papeisUsados.add(p));
+    });
+    const listaPapeis = [...papeisUsados];
+    for (let i = 0; i < listaPapeis.length; i++) {
+      const papel = listaPapeis[i];
+      setProgressoDeck(15 + Math.round((i / Math.max(1, listaPapeis.length)) * 70), `Procurando no estoque cartas de ${papel.startsWith('tipo:') ? papel.slice(5).toLowerCase() : (PAPEIS_CARTA.find(p => p.id === papel) || {}).nome || papel}...`);
+      let q;
+      if (papel.startsWith('tipo:')) {
+        const tipo = papel.slice(5).toLowerCase();
+        const filtroCor = cores.length ? ` ci<=${cores.join('').toLowerCase()}` : ' -id:w -id:u -id:b -id:r -id:g';
+        q = `t:${tipo}${filtroCor} legal:commander game:paper`;
+      } else q = consultaPapel(papel, cores);
+      buscas.set(papel, await scryfallBusca(q));
+      await esperar(90);
+    }
+    setProgressoDeck(90, 'Comparando os textos e separando o que cabe no orçamento...');
+    let seq = 1;
+    const faltamBasicos = faltam.filter(it => NOMES_BASICOS.has(normNome(it.nome)));
+    const faltamResto = faltam.filter(it => !NOMES_BASICOS.has(normNome(it.nome)));
+    if (faltamBasicos.length) {
+      const basicos = (deckAtual.meta.cores || []).map(c => BASICOS_COR[c]).filter(Boolean);
+      const substitui = faltamBasicos[0].nome;
+      basicos.forEach(nome => {
+        const info = estoqueMap.get(normNome(nome));
+        const usada = (deckAtual.itens.find(x => normNome(x.nome) === normNome(nome)) || {}).qtd || 0;
+        if (!info || info.qtd <= usada || excluir.has(normNome(nome))) return;
+        const cabe = restante == null || info.pvs <= restante + 0.001;
+        sugestoesDeck.push({ id: seq++, substitui, nome: info.nome, categoria: 'Terreno básico', motivo: 'Terreno básico dentro das cores do comandante. Você tem ' + (info.qtd - usada) + ' além das que já estão na lista.', pasta: info.pasta, pvs: info.pvs, dentro: cabe });
+      });
+    }
+    faltamResto.forEach(it => {
+      const alvo = porNome.get(normNome(it.nome));
+      if (!alvo || !corIdentidadeOk(alvo, cores)) return;
+      const papeis = papeisDaCarta(alvo);
+      const chaves = papeis.length ? papeis : ['tipo:' + tipoPrincipal(alvo)];
+      const vistos = new Set();
+      const candidatos = [];
+      chaves.forEach(p => (buscas.get(p) || []).forEach(c => {
+        const k = normNome(c.name);
+        if (vistos.has(k) || noDeck.has(k) || excluir.has(k) || k === normNome(it.nome)) return;
+        if (!corIdentidadeOk(c, cores)) return;
+        const info = estoqueMap.get(k);
+        if (!info) return;
+        vistos.add(k);
+        const sim = semelhancaCartas(alvo, c);
+        if (sim.score < 4) return;
+        const cabe = restante == null || info.pvs <= restante + 0.001;
+        candidatos.push({ id: 0, substitui: it.nome, nome: info.nome, categoria: it.categoria, motivo: sim.motivo, pasta: info.pasta, pvs: info.pvs, dentro: cabe, score: sim.score });
+      }));
+      candidatos.sort((a, b) => b.score - a.score);
+      const dentro = candidatos.filter(c => c.dentro).slice(0, 2);
+      const fora = candidatos.filter(c => !c.dentro).slice(0, 2);
+      dentro.concat(fora).forEach(c => { c.id = seq++; sugestoesDeck.push(c); });
+    });
+    setProgressoDeck(100, sugestoesDeck.length ? 'Sugestões prontas.' : 'Nenhuma carta parecida encontrada no estoque.');
+    renderDeck();
+    if (!sugestoesDeck.length) status.textContent = 'Não encontrei, no estoque, carta de função parecida dentro das cores do comandante.';
+    setTimeout(fimProgressoDeck, 900);
+  } catch (err) {
+    fimProgressoDeck();
+    status.textContent = err.message || 'Não foi possível completar o deck.';
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function adicionarSubstituto(id) {
+  const s = sugestoesDeck.find(x => x.id === id);
+  if (!s || !deckAtual) return;
+  const info = infoEstoqueDeck(s.nome);
+  if (!info) { alert('Essa carta não está mais no estoque.'); return; }
+  const faltava = deckAtual.itens.find(it => normNome(it.nome) === normNome(s.substitui));
+  if (faltava) {
+    if (faltava.qtd > 1) faltava.qtd -= 1;
+    else deckAtual.itens = deckAtual.itens.filter(it => it !== faltava);
+  }
+  const ja = deckAtual.itens.find(it => normNome(it.nome) === normNome(info.nome));
+  const restante = deckAtual.orcamento == null ? null : Math.max(0, deckAtual.orcamento - deckAtual.gasto);
+  const cabe = restante == null || info.pvs <= restante + 0.001;
+  if (ja && NOMES_BASICOS.has(normNome(info.nome))) {
+    ja.qtd += 1;
+    if (cabe) {
+      ja.qtdNoEstoque = Math.min(ja.qtd, info.qtd);
+      ja.foraOrcamento = false;
+      deckAtual.gasto += info.pvs;
+    }
+  } else if (!ja) {
+    deckAtual.itens.push({
+      nome: info.nome,
+      qtd: 1,
+      categoria: s.categoria || 'Substituto',
+      noEstoque: true,
+      foraOrcamento: !cabe,
+      pvs: info.pvs,
+      qtdNoEstoque: cabe ? 1 : 0,
+      pasta: info.pasta,
+      set: info.set,
+      cond: info.cond,
+      inclusao: null,
+      forcar: false
+    });
+    if (cabe) deckAtual.gasto += info.pvs;
+  }
+  const aindaFalta = deckAtual.itens.some(it => normNome(it.nome) === normNome(s.substitui) && !it.noEstoque);
+  sugestoesDeck = sugestoesDeck.filter(x => {
+    if (normNome(x.nome) === normNome(s.nome)) return false;
+    if (!aindaFalta && normNome(x.substitui) === normNome(s.substitui)) return false;
+    return true;
+  });
+  renderDeck();
 }
 
 function copiarDeck(soEstoque) {
