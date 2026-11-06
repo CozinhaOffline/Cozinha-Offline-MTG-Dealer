@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const zlib = require('zlib');
+const axios = require('axios');
 const db = require('./db');
 const { buscarPrecoLigamagic } = require('./scraper');
 
@@ -227,6 +228,74 @@ app.put('/api/config/:chave', async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+const edhCache = new Map();
+const EDH_TTL = 6 * 60 * 60 * 1000;
+
+function slugComandante(nome) {
+  return String(nome || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/['’]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+app.get('/api/edhrec', async (req, res) => {
+  const nome = String(req.query.comandante || '').trim();
+  if (!nome) return res.status(400).json({ error: 'Informe o comandante.' });
+  const slug = slugComandante(nome);
+  const hit = edhCache.get(slug);
+  if (hit && Date.now() - hit.em < EDH_TTL) return res.json(hit.dados);
+  try {
+    const url = `https://json.edhrec.com/pages/commanders/${encodeURIComponent(slug)}.json`;
+    const resp = await axios.get(url, {
+      timeout: 20000,
+      headers: { 'User-Agent': 'CozinhaOfflineStore/1.0', 'Accept': 'application/json' },
+      validateStatus: () => true
+    });
+    if (resp.status !== 200 || !resp.data || !resp.data.container) {
+      return res.status(404).json({ error: 'Comandante não encontrado no EDHREC. Use o nome em inglês, como no Scryfall.' });
+    }
+    const raw = resp.data;
+    const card = raw.container.json_dict?.card || {};
+    const listas = (raw.container.json_dict?.cardlists || []).map(cl => ({
+      tag: cl.tag || '',
+      header: cl.header || '',
+      cartas: (cl.cardviews || []).map(c => ({
+        nome: c.name,
+        sinergia: c.synergy || 0,
+        decks: c.num_decks || 0,
+        total: c.potential_decks || 0
+      }))
+    }));
+    const dados = {
+      nome: card.name || String(raw.header || nome).replace(/\s*\(Commander\)\s*$/i, ''),
+      slug,
+      url: `https://edhrec.com/commanders/${slug}`,
+      decks: card.num_decks || 0,
+      salt: card.salt || 0,
+      cores: card.color_identity || [],
+      cmc: card.cmc,
+      contagens: {
+        creature: raw.creature || 0,
+        instant: raw.instant || 0,
+        sorcery: raw.sorcery || 0,
+        artifact: raw.artifact || 0,
+        enchantment: raw.enchantment || 0,
+        planeswalker: raw.planeswalker || 0,
+        land: raw.land || 0,
+        basic: raw.basic || 0,
+        nonbasic: raw.nonbasic || 0
+      },
+      listas
+    };
+    edhCache.set(slug, { em: Date.now(), dados });
+    res.json(dados);
+  } catch (err) {
+    res.status(502).json({ error: 'Não consegui consultar o EDHREC agora. Tente de novo em instantes.' });
   }
 });
 
