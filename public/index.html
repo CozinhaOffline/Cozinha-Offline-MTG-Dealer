@@ -102,12 +102,13 @@
   <img src="logo.png" alt="Cozinha Offline Store">
   <div>
     <h1>Cozinha Offline Store</h1>
-    <p>Gestão de estoque, pedidos e orçamentos · versão 04/11-2</p>
+    <p>Gestão de estoque, pedidos e orçamentos · versão 05/11</p>
   </div>
 </header>
 <nav>
   <button class="active" data-tab="estoque">Estoque</button>
   <button data-tab="pedidos">Pedidos</button>
+  <button data-tab="deckbuilder">Deckbuilder</button>
   <button data-tab="financeiro">Financeiro</button>
   <button data-tab="custos">Custos e PVS</button>
   <button data-tab="orcamento">Orçamento</button>
@@ -359,6 +360,23 @@
       <datalist id="listaCodigosSaida"></datalist>
       <datalist id="listaClientesSaida"></datalist>
       <div id="historicoSaidas"></div>
+    </div>
+  </div>
+  <div id="deckbuilder" class="tab">
+    <div class="card">
+      <h2>Deckbuilder de Commander</h2>
+      <p class="muted">Monta uma lista de 100 cartas com o que o EDHREC mostra para o comandante. Cartas do seu estoque entram primeiro e o orçamento usa o PVS delas. O que você não tem fica marcado como sugestão. A escolha criativa com IA entra numa etapa seguinte.</p>
+      <div class="row">
+        <div class="col"><label>Comandante (nome em inglês)</label><input type="text" id="dbComandante" list="listaNomesDeck" placeholder="Atraxa, Praetors' Voice"></div>
+        <div class="col"><label>Orçamento (R$, só do que está no estoque)</label><input type="number" id="dbOrcamento" min="0" step="0.01" placeholder="Vazio = sem limite"></div>
+      </div>
+      <label>Cartas-chave (uma por linha, em inglês)</label>
+      <textarea id="dbChaves" placeholder="1 Sol Ring&#10;1 Doubling Season"></textarea>
+      <label style="display:flex;gap:0.45rem;align-items:center;margin:0.4rem 0 0.8rem;"><input type="checkbox" id="dbPriorizar" checked> Priorizar cartas que já estão no estoque</label>
+      <button class="primary" type="button" onclick="montarDeck()">Buscar no EDHREC e montar deck</button>
+      <div id="dbStatus" class="muted" style="margin-top:0.6rem;"></div>
+      <div id="dbResultado" style="display:none;margin-top:1rem;"></div>
+      <datalist id="listaNomesDeck"></datalist>
     </div>
   </div>
   <div id="financeiro" class="tab">
@@ -3537,6 +3555,7 @@ document.querySelectorAll('nav button').forEach(btn => {
     btn.classList.add('active');
     document.getElementById(btn.dataset.tab).classList.add('active');
     if (btn.dataset.tab === 'financeiro') renderFinanceiro();
+    if (btn.dataset.tab === 'deckbuilder') preencherNomesDeck();
   });
 });
 
@@ -4149,6 +4168,296 @@ function prepararFinanceiro() {
   if (de && !de.value) de.value = hoje.getFullYear() + '-01-01';
   renderIdpSelects();
 }
+
+let deckAtual = null;
+const BASICOS_COR = { W: 'Plains', U: 'Island', B: 'Swamp', R: 'Mountain', G: 'Forest' };
+const NOMES_BASICOS = new Set(['plains', 'island', 'swamp', 'mountain', 'forest']);
+
+function infoEstoqueDeck(nome) {
+  const cs = buscarNoEstoque(nome);
+  if (!cs.length) return null;
+  cs.sort((a, b) => (parseFloat(a.pvs) || 0) - (parseFloat(b.pvs) || 0));
+  return {
+    nome: cs[0].nome,
+    pvs: parseFloat(cs[0].pvs) || 0,
+    qtd: cs.reduce((s, c) => s + (parseInt(c.qtd, 10) || 0), 0),
+    pasta: cs[0].pasta || 'Geral',
+    set: cs[0].set || '',
+    cond: cs[0].cond || ''
+  };
+}
+
+function preencherNomesDeck() {
+  const dl = document.getElementById('listaNomesDeck');
+  if (!dl || dl.dataset.pronto === '1' || !Array.isArray(estoque)) return;
+  const nomes = [...new Set(estoque.map(c => c.nome).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  dl.innerHTML = nomes.map(n => `<option value="${esc(n)}"></option>`).join('');
+  dl.dataset.pronto = '1';
+}
+
+function inclusaoEdh(c) {
+  return c && c.total ? (c.decks || 0) / c.total : 0;
+}
+
+function montarListaDeck(dados, chaves, orcamento, priorizar) {
+  const cont = dados.contagens || {};
+  const porTag = {};
+  (dados.listas || []).forEach(l => { porTag[l.tag] = l.cartas || []; });
+  const itens = [];
+  const usado = new Set();
+  let gasto = 0;
+
+  function cabe(valor, forcar) {
+    if (forcar || orcamento == null || !isFinite(orcamento)) return true;
+    return gasto + valor <= orcamento + 0.001;
+  }
+
+  function acharMeta(nome) {
+    const n = normNome(nome);
+    for (const cartas of Object.values(porTag)) {
+      const achou = cartas.find(c => normNome(c.nome) === n);
+      if (achou) return achou;
+    }
+    return null;
+  }
+
+  function categoriaDe(nome, metaTag) {
+    if (NOMES_BASICOS.has(normNome(nome))) return 'Terreno básico';
+    const mapa = {
+      manaartifacts: 'Artefato de mana',
+      utilityartifacts: 'Artefato',
+      creatures: 'Criatura',
+      instants: 'Instant',
+      sorceries: 'Feitiço',
+      enchantments: 'Encantamento',
+      planeswalkers: 'Planeswalker',
+      utilitylands: 'Terreno',
+      lands: 'Terreno'
+    };
+    return mapa[metaTag] || 'Carta-chave';
+  }
+
+  function tagDe(nome) {
+    const n = normNome(nome);
+    for (const [tag, cartas] of Object.entries(porTag)) {
+      if (cartas.some(c => normNome(c.nome) === n)) return tag;
+    }
+    return '';
+  }
+
+  function add(nome, categoria, meta, forcar, qtd) {
+    qtd = qtd || 1;
+    const info = infoEstoqueDeck(nome);
+    const nomeFinal = info ? info.nome : nome;
+    const chave = normNome(nomeFinal);
+    if (!chave) return false;
+    if (usado.has(chave)) {
+      const ja = itens.find(it => normNome(it.nome) === chave);
+      if (ja && NOMES_BASICOS.has(chave)) {
+        const preco = info ? info.pvs * qtd : 0;
+        const conta = !(info && !cabe(preco, forcar));
+        ja.qtd += qtd;
+        if (info && conta) {
+          gasto += preco;
+          ja.qtdNoEstoque = Math.min(ja.qtd, info.qtd);
+        }
+        return true;
+      }
+      return false;
+    }
+    const precoLinha = info ? info.pvs * qtd : 0;
+    const conta = !(info && !cabe(precoLinha, forcar));
+    if (info && conta) gasto += precoLinha;
+    usado.add(chave);
+    itens.push({
+      nome: nomeFinal,
+      qtd,
+      categoria,
+      noEstoque: !!info,
+      foraOrcamento: !!(info && !conta),
+      pvs: info ? info.pvs : null,
+      qtdNoEstoque: info && conta ? Math.min(qtd, info.qtd) : 0,
+      pasta: info ? info.pasta : '',
+      set: info ? info.set : '',
+      cond: info ? info.cond : '',
+      inclusao: meta ? inclusaoEdh(meta) : null,
+      forcar: !!forcar
+    });
+    return true;
+  }
+
+  add(dados.nome, 'Comandante', acharMeta(dados.nome), true, 1);
+  chaves.forEach(ch => {
+    const info = infoEstoqueDeck(ch.nome);
+    const nome = info ? info.nome : ch.nome;
+    if (normNome(nome) === normNome(dados.nome)) return;
+    const qtd = NOMES_BASICOS.has(normNome(nome)) ? ch.qtd : 1;
+    add(nome, categoriaDe(nome, tagDe(nome)), acharMeta(nome), true, qtd);
+  });
+
+  function ordenar(cartas) {
+    return cartas.slice().sort((a, b) => {
+      const ea = !!infoEstoqueDeck(a.nome);
+      const eb = !!infoEstoqueDeck(b.nome);
+      if (priorizar && ea !== eb) return ea ? -1 : 1;
+      const ia = inclusaoEdh(a);
+      const ib = inclusaoEdh(b);
+      if (ib !== ia) return ib - ia;
+      return (b.sinergia || 0) - (a.sinergia || 0);
+    });
+  }
+
+  function qtdOnde(pred) {
+    return itens.reduce((s, it) => s + (pred(it) ? it.qtd : 0), 0);
+  }
+
+  function preencher(cartas, alvo, categoria) {
+    if (alvo <= 0) return;
+    for (const c of ordenar(cartas)) {
+      if (qtdOnde(it => it.categoria === categoria) >= alvo) break;
+      add(c.nome, categoria, c, false, 1);
+    }
+  }
+
+  const artAlvo = cont.artifact || 0;
+  const utilAlvo = Math.min((porTag.utilityartifacts || []).length, Math.round(artAlvo * 0.35));
+  preencher(porTag.manaartifacts || [], Math.max(0, artAlvo - utilAlvo), 'Artefato de mana');
+  preencher(porTag.utilityartifacts || [], Math.max(0, artAlvo - qtdOnde(it => it.categoria === 'Artefato de mana')), 'Artefato');
+  preencher(porTag.creatures || [], cont.creature || 0, 'Criatura');
+  preencher(porTag.instants || [], cont.instant || 0, 'Instant');
+  preencher(porTag.sorceries || [], cont.sorcery || 0, 'Feitiço');
+  preencher(porTag.enchantments || [], cont.enchantment || 0, 'Encantamento');
+  preencher(porTag.planeswalkers || [], cont.planeswalker || 0, 'Planeswalker');
+
+  const terrenos = []
+    .concat(porTag.utilitylands || [], porTag.lands || [])
+    .filter(c => !NOMES_BASICOS.has(normNome(c.nome)));
+  preencher(terrenos, cont.nonbasic || 0, 'Terreno');
+
+  const nomesBasicos = (dados.cores || []).map(c => BASICOS_COR[c]).filter(Boolean);
+  let basicosFaltam = Math.max(0, (cont.land || 0) - qtdOnde(it => it.categoria === 'Terreno' || it.categoria === 'Terreno básico' || NOMES_BASICOS.has(normNome(it.nome))));
+  let giro = 0;
+  while (basicosFaltam > 0 && nomesBasicos.length && giro < 80) {
+    if (!add(nomesBasicos[giro % nomesBasicos.length], 'Terreno básico', null, false, 1)) break;
+    basicosFaltam--;
+    giro++;
+  }
+
+  const pool = [];
+  Object.entries(porTag).forEach(([tag, cartas]) => {
+    if (tag === 'lands' || tag === 'utilitylands') return;
+    cartas.forEach(c => { if (!NOMES_BASICOS.has(normNome(c.nome))) pool.push(c); });
+  });
+  function cartas99() {
+    return itens.reduce((s, it) => s + (it.categoria === 'Comandante' ? 0 : it.qtd), 0);
+  }
+  for (const c of ordenar(pool)) {
+    if (cartas99() >= 99) break;
+    add(c.nome, 'Complemento', c, false, 1);
+  }
+
+  while (cartas99() > 99) {
+    let idx = -1;
+    let pior = Infinity;
+    itens.forEach((it, i) => {
+      if (it.categoria === 'Comandante' || it.forcar) return;
+      const score = (it.categoria === 'Complemento' ? -1 : 0) + (it.inclusao == null ? 0 : it.inclusao);
+      if (score < pior) { pior = score; idx = i; }
+    });
+    if (idx < 0) break;
+    const it = itens[idx];
+    if (it.noEstoque && !it.foraOrcamento && it.pvs) gasto -= it.pvs * (it.qtd > 1 ? 1 : it.qtd);
+    if (it.qtd > 1) {
+      it.qtd -= 1;
+      it.qtdNoEstoque = Math.min(it.qtd, it.qtdNoEstoque);
+    } else {
+      itens.splice(idx, 1);
+    }
+  }
+
+  return { itens, gasto };
+}
+
+function renderDeck() {
+  const box = document.getElementById('dbResultado');
+  if (!deckAtual) { box.style.display = 'none'; return; }
+  const d = deckAtual;
+  const ordem = ['Comandante', 'Carta-chave', 'Criatura', 'Instant', 'Feitiço', 'Artefato de mana', 'Artefato', 'Encantamento', 'Planeswalker', 'Terreno', 'Terreno básico', 'Complemento'];
+  const itens = d.itens.slice().sort((a, b) => ordem.indexOf(a.categoria) - ordem.indexOf(b.categoria) || a.nome.localeCompare(b.nome));
+  const qtd = itens.reduce((s, it) => s + it.qtd, 0);
+  const noEstoque = itens.reduce((s, it) => s + (it.qtdNoEstoque || 0), 0);
+  const faltam = qtd - noEstoque;
+  const limite = d.orcamento == null ? 'sem limite' : formatMoney(d.orcamento);
+  const estourou = d.orcamento != null && d.gasto > d.orcamento + 0.001;
+  let html = `<p><strong>${esc(d.meta.nome)}</strong> · ${d.meta.decks || 0} decks no EDHREC · salt ${Number(d.meta.salt || 0).toFixed(2)} · <a href="${esc(d.meta.url)}" target="_blank" rel="noopener">abrir no EDHREC</a></p>`;
+  html += `<div class="stats"><div>Cartas: ${qtd}</div><div>No estoque: ${noEstoque}</div><div>Em falta: ${faltam}</div><div>PVS do que temos: ${formatMoney(d.gasto)}</div><div>Orçamento: ${limite}</div></div>`;
+  if (estourou) html += `<div class="alert">As cartas-chave obrigatórias passaram do orçamento. O restante da lista ficou dentro do que ainda cabia.</div>`;
+  html += `<div style="margin:0.6rem 0;display:flex;gap:0.4rem;flex-wrap:wrap;">
+    <button class="secondary small" type="button" onclick="copiarDeck(false)">Copiar lista completa</button>
+    <button class="secondary small" type="button" onclick="copiarDeck(true)">Copiar só o que temos</button>
+    <button class="primary small" type="button" onclick="deckParaPedidos()">Levar o que temos para Pedidos</button>
+  </div>`;
+  html += `<div style="overflow:auto;"><table><thead><tr><th>Qtd</th><th>Carta</th><th>Função</th><th>EDHREC</th><th>Estoque</th><th>Pasta</th><th>PVS</th><th>Subtotal</th></tr></thead><tbody>`;
+  itens.forEach(it => {
+    const pct = it.inclusao == null ? '—' : Math.round(it.inclusao * 100) + '%';
+    const est = !it.noEstoque ? 'não temos' : (it.foraOrcamento ? 'no estoque, fora do orçamento' : `${it.qtdNoEstoque} un.`);
+    const sub = it.noEstoque ? formatMoney((it.pvs || 0) * (it.qtdNoEstoque || 0)) : '—';
+    html += `<tr><td>${it.qtd}</td><td class="card-name" data-nome="${esc(it.nome)}">${esc(it.nome)}</td><td>${esc(it.categoria)}</td><td>${pct}</td><td>${est}</td><td>${esc(it.pasta || '—')}</td><td>${it.pvs == null ? '—' : formatMoney(it.pvs)}</td><td>${sub}</td></tr>`;
+  });
+  html += '</tbody></table></div>';
+  box.innerHTML = html;
+  box.style.display = 'block';
+}
+
+async function montarDeck() {
+  const nome = document.getElementById('dbComandante').value.trim();
+  if (!nome) { alert('Informe o comandante.'); return; }
+  const orcRaw = document.getElementById('dbOrcamento').value.trim();
+  const orcamento = orcRaw === '' ? null : parseFloat(orcRaw);
+  if (orcRaw !== '' && !(orcamento >= 0)) { alert('Orçamento inválido.'); return; }
+  const chaves = document.getElementById('dbChaves').value.split('\n').map(lerLinhaLista).filter(x => x.nome);
+  const priorizar = document.getElementById('dbPriorizar').checked;
+  const status = document.getElementById('dbStatus');
+  status.textContent = 'Consultando o EDHREC...';
+  document.getElementById('dbResultado').style.display = 'none';
+  try {
+    const resp = await fetch('/api/edhrec?comandante=' + encodeURIComponent(nome));
+    const texto = await resp.text();
+    let dados;
+    try { dados = JSON.parse(texto); } catch (e) {
+      throw new Error('O servidor ainda não tem a consulta do EDHREC. Atualize o server.js e espere o Render ficar Live.');
+    }
+    if (!resp.ok) throw new Error(dados.error || 'Falha ao consultar o EDHREC');
+    const deck = montarListaDeck(dados, chaves, orcamento, priorizar);
+    deck.meta = dados;
+    deck.orcamento = orcamento;
+    deckAtual = deck;
+    renderDeck();
+    status.textContent = '';
+  } catch (err) {
+    status.textContent = err.message || 'Não foi possível montar o deck.';
+  }
+}
+
+function copiarDeck(soEstoque) {
+  if (!deckAtual) return;
+  const texto = deckAtual.itens
+    .filter(it => !soEstoque || it.qtdNoEstoque > 0)
+    .map(it => (soEstoque ? it.qtdNoEstoque : it.qtd) + ' ' + it.nome)
+    .join('\n');
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(texto).then(() => alert('Lista copiada.')).catch(() => prompt('Copie a lista:', texto));
+  } else prompt('Copie a lista:', texto);
+}
+
+function deckParaPedidos() {
+  if (!deckAtual) return;
+  const texto = deckAtual.itens.filter(it => it.qtdNoEstoque > 0).map(it => it.qtdNoEstoque + ' ' + it.nome).join('\n');
+  document.getElementById('pedLista').value = texto;
+  document.getElementById('pedTitulo').value = deckAtual.meta.nome;
+  document.querySelector('nav button[data-tab="pedidos"]').click();
+}
+
 
 document.addEventListener('DOMContentLoaded', async () => {
   await carregarRegrasPVS();
