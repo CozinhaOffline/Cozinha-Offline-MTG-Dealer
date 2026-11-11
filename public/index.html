@@ -102,7 +102,7 @@
   <img src="logo.png" alt="Cozinha Offline Store">
   <div>
     <h1>Cozinha Offline Store</h1>
-    <p>Gestão de estoque, pedidos e orçamentos · versão 08/11</p>
+    <p>Gestão de estoque, pedidos e orçamentos · versão 11/11</p>
   </div>
 </header>
 <nav>
@@ -365,7 +365,7 @@
   <div id="deckbuilder" class="tab">
     <div class="card">
       <h2>Deckbuilder de Commander</h2>
-      <p class="muted">Monta uma lista de 100 cartas com o que o EDHREC mostra para o comandante. Cartas do seu estoque entram primeiro e o orçamento usa o PVS delas. Completar deck lê o texto oficial das cartas e sugere, no seu estoque, peças de função parecida sem sair das cores do comandante.</p>
+      <p class="muted">A lista de referência mostra o que o EDHREC joga, mesmo o que você não tem. A outra opção fecha 100 cartas só com o que está no estoque e cabe no orçamento, descendo a lista inteira do comandante.</p>
       <div class="row">
         <div class="col"><label>Comandante (nome em inglês)</label><input type="text" id="dbComandante" list="listaNomesDeck" placeholder="Atraxa, Praetors' Voice"></div>
         <div class="col"><label>Orçamento (R$, só do que está no estoque)</label><input type="number" id="dbOrcamento" min="0" step="0.01" placeholder="Vazio = sem limite"></div>
@@ -375,7 +375,8 @@
       <label>Não incluir (uma por linha). Estas cartas ficam de fora mesmo que estejam no EDHREC, no estoque ou no orçamento.</label>
       <textarea id="dbExcluir" placeholder="Sol Ring&#10;Cyclonic Rift"></textarea>
       <label style="display:flex;gap:0.45rem;align-items:center;margin:0.4rem 0 0.8rem;"><input type="checkbox" id="dbPriorizar" checked> Priorizar cartas que já estão no estoque</label>
-      <button class="primary" type="button" onclick="montarDeck()">Buscar no EDHREC e montar deck</button>
+      <button class="primary" type="button" onclick="montarDeck(false)">Montar lista de referência</button>
+      <button class="primary" type="button" onclick="montarDeck(true)">Montar 100 só com o estoque</button>
       <div id="dbProgresso" style="display:none;margin-top:0.7rem;">
         <div style="height:10px;background:#0e141b;border:1px solid var(--borda);border-radius:6px;overflow:hidden;">
           <div id="dbProgressoBar" style="height:100%;width:0;background:var(--vermelho);"></div>
@@ -4266,6 +4267,323 @@ function inclusaoEdh(c) {
   return c && c.total ? (c.decks || 0) / c.total : 0;
 }
 
+function montarListaSoEstoque(dados, chaves, orcamento, excluir) {
+  excluir = excluir || new Set();
+  const porTag = {};
+  (dados.listas || []).forEach(l => { porTag[l.tag] = l.cartas || []; });
+  const cont = dados.contagens || {};
+  const itens = [];
+  const usado = new Set();
+  let gasto = 0;
+  const notas = [];
+  const TAG_CAT = {
+    manaartifacts: 'Artefato de mana',
+    utilityartifacts: 'Artefato',
+    creatures: 'Criatura',
+    instants: 'Instant',
+    sorceries: 'Feitiço',
+    enchantments: 'Encantamento',
+    planeswalkers: 'Planeswalker',
+    utilitylands: 'Terreno',
+    lands: 'Terreno'
+  };
+
+  function cartas99() {
+    return itens.reduce((s, it) => s + (it.categoria === 'Comandante' ? 0 : it.qtd), 0);
+  }
+  function qtdCat(cat) {
+    return itens.reduce((s, it) => s + (it.categoria === cat ? it.qtd : 0), 0);
+  }
+  function ehTerrenoItem(it) {
+    return it.categoria === 'Terreno' || it.categoria === 'Terreno básico' || NOMES_BASICOS.has(normNome(it.nome));
+  }
+  function landsNoDeck() {
+    return itens.reduce((s, it) => s + (ehTerrenoItem(it) ? it.qtd : 0), 0);
+  }
+
+  const infoCmd = infoEstoqueDeck(dados.nome);
+  const nomeCmd = infoCmd ? infoCmd.nome : dados.nome;
+  itens.push({
+    nome: nomeCmd,
+    qtd: 1,
+    categoria: 'Comandante',
+    noEstoque: !!infoCmd,
+    foraOrcamento: false,
+    pvs: infoCmd ? infoCmd.pvs : null,
+    qtdNoEstoque: infoCmd ? 1 : 0,
+    pasta: infoCmd ? infoCmd.pasta : '',
+    set: infoCmd ? infoCmd.set : '',
+    cond: infoCmd ? infoCmd.cond : '',
+    inclusao: null,
+    forcar: true
+  });
+  if (infoCmd) {
+    gasto += infoCmd.pvs;
+    usado.add(normNome(infoCmd.nome));
+  } else {
+    notas.push('O comandante não está no estoque. As outras cartas da lista estão.');
+  }
+
+  const spells = [];
+  const lands = [];
+  const vistos = new Map();
+  Object.entries(porTag).forEach(([tag, cartas]) => {
+    const terreno = tag === 'lands' || tag === 'utilitylands';
+    (cartas || []).forEach(c => {
+      const bruto = normNome(c.nome);
+      if (!bruto || excluir.has(bruto) || NOMES_BASICOS.has(bruto) || bruto === normNome(dados.nome)) return;
+      const info = infoEstoqueDeck(c.nome);
+      if (!info || info.qtd < 1) return;
+      const chave = normNome(info.nome);
+      if (!chave || excluir.has(chave) || usado.has(chave)) return;
+      const categoria = TAG_CAT[tag] || (terreno ? 'Terreno' : 'Complemento');
+      const item = { chave, nome: info.nome, pvs: info.pvs, info, categoria, meta: c, inclusao: inclusaoEdh(c), terreno: terreno || categoria === 'Terreno' };
+      const prev = vistos.get(chave);
+      if (!prev || item.inclusao > prev.inclusao || (item.terreno && !prev.terreno)) vistos.set(chave, item);
+    });
+  });
+  vistos.forEach(item => (item.terreno ? lands : spells).push(item));
+
+  const basicos = (dados.cores || []).map(cor => {
+    const nome = BASICOS_COR[cor];
+    if (!nome || excluir.has(normNome(nome))) return null;
+    const info = infoEstoqueDeck(nome);
+    if (!info || info.qtd < 1) return null;
+    return { nome: info.nome, info, pvs: info.pvs, sobra: info.qtd };
+  }).filter(Boolean);
+
+  function ordenarInclusao(arr) {
+    return arr.slice().sort((a, b) => (b.inclusao || 0) - (a.inclusao || 0) || ((b.meta && b.meta.sinergia) || 0) - ((a.meta && a.meta.sinergia) || 0) || a.pvs - b.pvs);
+  }
+  function consumir(chave) {
+    const i = spells.findIndex(c => c.chave === chave);
+    if (i >= 0) spells.splice(i, 1);
+    const j = lands.findIndex(c => c.chave === chave);
+    if (j >= 0) lands.splice(j, 1);
+  }
+  function precosSpells() {
+    return spells.map(c => c.pvs).sort((a, b) => a - b);
+  }
+  function precosLands() {
+    const arr = lands.map(c => c.pvs);
+    basicos.forEach(b => { for (let i = 0; i < b.sobra; i++) arr.push(b.pvs); });
+    arr.sort((a, b) => a - b);
+    return arr;
+  }
+  function soma(arr, n, pular) {
+    if (n <= 0) return 0;
+    let s = 0;
+    let k = 0;
+    let pulou = !pular;
+    for (let i = 0; i < arr.length && k < n; i++) {
+      if (!pulou && Math.abs(arr[i] - pular.preco) < 0.001) { pulou = true; continue; }
+      s += arr[i];
+      k++;
+    }
+    return k < n ? Infinity : s;
+  }
+
+  let landAlvo = cont.land || 37;
+  if (!(landAlvo >= 33 && landAlvo <= 40)) landAlvo = landAlvo < 33 ? 33 : 38;
+  function terrasDisponiveis() {
+    return lands.length + basicos.reduce((s, b) => s + b.sobra, 0);
+  }
+  function slotsTerreno() {
+    return Math.min(Math.max(0, landAlvo - landsNoDeck()), terrasDisponiveis());
+  }
+  function cabeBruto(pvs) {
+    if (cartas99() >= 99) return false;
+    if (orcamento == null || !isFinite(orcamento)) return true;
+    return gasto + pvs <= orcamento + 0.001;
+  }
+  function cabeTipo(pvs, tipo) {
+    if (!cabeBruto(pvs)) return false;
+    if (orcamento == null || !isFinite(orcamento)) return true;
+    const slots = 99 - cartas99() - 1;
+    let guardLands;
+    let guardSpells;
+    if (tipo === 'land') {
+      guardLands = Math.min(Math.max(0, slotsTerreno() - 1), slots);
+      guardSpells = slots - guardLands;
+    } else {
+      guardLands = Math.min(slotsTerreno(), slots);
+      guardSpells = slots - guardLands;
+    }
+    const cL = soma(precosLands(), guardLands, tipo === 'land' ? { preco: pvs } : null);
+    const cS = soma(precosSpells(), guardSpells, tipo === 'spell' ? { preco: pvs } : null);
+    if (!isFinite(cL) || !isFinite(cS)) return false;
+    return gasto + pvs + cL + cS <= orcamento + 0.001;
+  }
+  function deckMinimoCabe() {
+    if (orcamento == null || !isFinite(orcamento)) return true;
+    const slots = 99 - cartas99();
+    if (slots <= 0) return true;
+    const nL = Math.min(slotsTerreno(), slots, precosLands().length);
+    const nS = Math.min(slots - nL, precosSpells().length);
+    if (nL + nS < slots) return false;
+    const custo = soma(precosLands(), nL, null) + soma(precosSpells(), nS, null);
+    return gasto + custo <= orcamento + 0.001;
+  }
+
+  function incluir(c, categoria, forcar) {
+    if (!c || usado.has(c.chave) || cartas99() >= 99) return false;
+    const tipo = (c.terreno || categoria === 'Terreno' || categoria === 'Terreno básico') ? 'land' : 'spell';
+    const ok = modoAperto ? cabeBruto(c.pvs) : cabeTipo(c.pvs, tipo);
+    if (!ok) return false;
+    gasto += c.pvs;
+    usado.add(c.chave);
+    itens.push({
+      nome: c.info.nome,
+      qtd: 1,
+      categoria,
+      noEstoque: true,
+      foraOrcamento: false,
+      pvs: c.pvs,
+      qtdNoEstoque: 1,
+      pasta: c.info.pasta || '',
+      set: c.info.set || '',
+      cond: c.info.cond || '',
+      inclusao: c.meta ? inclusaoEdh(c.meta) : null,
+      forcar: !!forcar
+    });
+    consumir(c.chave);
+    return true;
+  }
+  function incluirBasico(b) {
+    if (!b || b.sobra <= 0 || cartas99() >= 99) return false;
+    const ok = modoAperto ? cabeBruto(b.pvs) : cabeTipo(b.pvs, 'land');
+    if (!ok) return false;
+    const chave = normNome(b.nome);
+    const ja = itens.find(it => normNome(it.nome) === chave);
+    gasto += b.pvs;
+    b.sobra -= 1;
+    if (ja) {
+      ja.qtd += 1;
+      ja.qtdNoEstoque = ja.qtd;
+      return true;
+    }
+    usado.add(chave);
+    itens.push({
+      nome: b.info.nome,
+      qtd: 1,
+      categoria: 'Terreno básico',
+      noEstoque: true,
+      foraOrcamento: false,
+      pvs: b.pvs,
+      qtdNoEstoque: 1,
+      pasta: b.info.pasta || '',
+      set: b.info.set || '',
+      cond: b.info.cond || '',
+      inclusao: null,
+      forcar: false
+    });
+    return true;
+  }
+
+  const modoAperto = !deckMinimoCabe();
+
+  const chavesFora = [];
+  (chaves || []).forEach(ch => {
+    const chave = normNome(ch.nome);
+    if (!chave || chave === normNome(dados.nome) || excluir.has(chave)) return;
+    if (NOMES_BASICOS.has(chave)) {
+      const b = basicos.find(x => normNome(x.nome) === chave);
+      let q = ch.qtd || 1;
+      let entrou = 0;
+      while (q > 0 && b && incluirBasico(b)) { entrou++; q--; }
+      if (!entrou) chavesFora.push(ch.nome);
+      return;
+    }
+    let c = spells.find(x => x.chave === chave) || lands.find(x => x.chave === chave);
+    if (!c) {
+      const info = infoEstoqueDeck(ch.nome);
+      if (info && info.qtd > 0) c = { chave: normNome(info.nome), nome: info.nome, pvs: info.pvs, info, categoria: 'Carta-chave', meta: null, inclusao: 0, terreno: false };
+    }
+    if (!c || !incluir(c, 'Carta-chave', true)) chavesFora.push(ch.nome);
+  });
+  if (chavesFora.length) notas.push('Não entraram nas 100 porque não estão no estoque ou não cabem no orçamento: ' + chavesFora.join(', ') + '.');
+
+  function pegar(lista, alvo, categoria, tipo) {
+    if (!(alvo > 0)) return;
+    ordenarInclusao(lista).forEach(c => {
+      if (qtdCat(categoria) >= alvo || cartas99() >= 99) return;
+      if (tipo === 'land' && landsNoDeck() >= landAlvo) return;
+      incluir(c, categoria);
+    });
+  }
+
+  if (!modoAperto) {
+    const artAlvo = cont.artifact || 10;
+    const utilAlvo = Math.min(spells.filter(c => c.categoria === 'Artefato').length, Math.round(artAlvo * 0.35));
+    pegar(spells.filter(c => c.categoria === 'Artefato de mana'), Math.max(0, artAlvo - utilAlvo), 'Artefato de mana', 'spell');
+    pegar(spells.filter(c => c.categoria === 'Artefato'), Math.max(0, artAlvo - qtdCat('Artefato de mana')), 'Artefato', 'spell');
+    pegar(spells.filter(c => c.categoria === 'Criatura'), cont.creature || 28, 'Criatura', 'spell');
+    pegar(spells.filter(c => c.categoria === 'Instant'), cont.instant || 8, 'Instant', 'spell');
+    pegar(spells.filter(c => c.categoria === 'Feitiço'), cont.sorcery || 6, 'Feitiço', 'spell');
+    pegar(spells.filter(c => c.categoria === 'Encantamento'), cont.enchantment || 8, 'Encantamento', 'spell');
+    pegar(spells.filter(c => c.categoria === 'Planeswalker'), cont.planeswalker || 1, 'Planeswalker', 'spell');
+    const nonbasicAlvo = Math.min(cont.nonbasic || Math.round(landAlvo * 0.45), landAlvo);
+    pegar(lands, nonbasicAlvo, 'Terreno', 'land');
+    let giro = 0;
+    let travou = 0;
+    while (landsNoDeck() < landAlvo && cartas99() < 99 && basicos.length && travou < 90) {
+      const b = basicos[giro % basicos.length];
+      giro++;
+      if (!incluirBasico(b)) travou++;
+      else travou = 0;
+    }
+    ordenarInclusao(spells).forEach(c => {
+      if (cartas99() >= 99 || landsNoDeck() < landAlvo && slotsTerreno() >= (99 - cartas99())) return;
+      incluir(c, c.categoria || 'Complemento');
+    });
+    ordenarInclusao(lands).forEach(c => {
+      if (cartas99() >= 99) return;
+      incluir(c, 'Terreno');
+    });
+  } else {
+    spells.sort((a, b) => a.pvs - b.pvs || (b.inclusao || 0) - (a.inclusao || 0));
+    lands.sort((a, b) => a.pvs - b.pvs || (b.inclusao || 0) - (a.inclusao || 0));
+    function landMaisBarato() {
+      const c = lands[0];
+      const b = basicos.filter(x => x.sobra > 0).sort((x, y) => x.pvs - y.pvs)[0];
+      if (!c && !b) return null;
+      if (c && (!b || c.pvs <= b.pvs)) return { tipo: 'card', c };
+      return { tipo: 'basic', b };
+    }
+    function porLand(pick) {
+      if (!pick) return false;
+      return pick.tipo === 'card' ? incluir(pick.c, 'Terreno') : incluirBasico(pick.b);
+    }
+    let guard = 0;
+    while (cartas99() < 99 && guard < 120) {
+      guard++;
+      const querLand = landsNoDeck() < Math.min(landAlvo, Math.max(1, Math.round((cartas99() + 1) * landAlvo / 99)));
+      if (querLand && porLand(landMaisBarato())) continue;
+      const c = spells[0];
+      if (c && incluir(c, c.categoria || 'Complemento')) continue;
+      if (porLand(landMaisBarato())) continue;
+      break;
+    }
+  }
+
+  ordenarInclusao(spells).forEach(c => { if (cartas99() < 99 && cabeBruto(c.pvs)) incluir(c, c.categoria || 'Complemento'); });
+  ordenarInclusao(lands).forEach(c => { if (cartas99() < 99 && cabeBruto(c.pvs)) incluir(c, 'Terreno'); });
+  let giroFim = 0;
+  while (cartas99() < 99 && giroFim < 60) {
+    const b = basicos[giroFim % Math.max(1, basicos.length)];
+    giroFim++;
+    if (!b || !incluirBasico(b)) break;
+  }
+
+  gasto = Math.round(gasto * 100) / 100;
+  const total = itens.reduce((s, it) => s + it.qtd, 0);
+  let aviso = '';
+  if (cartas99() < 99) {
+    aviso = 'Fechei ' + total + ' cartas dentro do orçamento. Não há mais cartas deste comandante no estoque que caibam no que sobrou.';
+  }
+  return { itens, gasto, soEstoque: true, notas, aviso };
+}
+
 function montarListaDeck(dados, chaves, orcamento, priorizar, excluir) {
   const cont = dados.contagens || {};
   const porTag = {};
@@ -4499,6 +4817,9 @@ function renderDeck() {
   let html = `<p><strong>${esc(d.meta.nome)}</strong> · ${d.meta.decks || 0} decks no EDHREC · salt ${Number(d.meta.salt || 0).toFixed(2)} · <a href="${esc(d.meta.url)}" target="_blank" rel="noopener">abrir no EDHREC</a></p>`;
   html += `<div class="stats"><div>Cartas: ${qtd}</div><div>No estoque: ${noEstoque}</div><div>Em falta: ${faltam}</div><div>PVS do que temos: ${formatMoney(d.gasto)}</div><div>Orçamento: ${limite}</div></div>`;
   if (estourou) html += `<div class="alert">As cartas-chave obrigatórias passaram do orçamento. O restante da lista ficou dentro do que ainda cabia.</div>`;
+  if (d.aviso) html += `<div class="alert">${esc(d.aviso)}</div>`;
+  (d.notas || []).forEach(n => { html += `<div class="alert">${esc(n)}</div>`; });
+  if (d.soEstoque && !d.aviso) html += `<p class="muted">As 100 cartas estão no estoque e dentro do orçamento. A escolha seguiu o EDHREC, das mais usadas para as menos, pulando o que você não tem.</p>`;
   html += `<div style="margin:0.6rem 0;display:flex;gap:0.4rem;flex-wrap:wrap;">
     <button class="secondary small" type="button" onclick="copiarDeck(false)">Copiar lista completa</button>
     <button class="secondary small" type="button" onclick="copiarDeck(true)">Copiar só o que temos</button>
@@ -4531,7 +4852,7 @@ function fimProgressoDeck() {
   if (box) box.style.display = 'none';
 }
 
-async function montarDeck() {
+async function montarDeck(soEstoque) {
   const nome = document.getElementById('dbComandante').value.trim();
   if (!nome) { alert('Informe o comandante.'); return; }
   const orcRaw = document.getElementById('dbOrcamento').value.trim();
@@ -4555,8 +4876,8 @@ async function montarDeck() {
       throw new Error('O servidor ainda não tem a consulta do EDHREC. Atualize o server.js e espere o Render ficar Live.');
     }
     if (!resp.ok) throw new Error(dados.error || 'Falha ao consultar o EDHREC');
-    setProgressoDeck(72, 'Cruzando com o estoque e o orçamento...');
-    const deck = montarListaDeck(dados, chaves, orcamento, priorizar, excluir);
+    setProgressoDeck(72, soEstoque ? 'Fechando 100 cartas do estoque dentro do orçamento...' : 'Cruzando com o estoque e o orçamento...');
+    const deck = soEstoque ? montarListaSoEstoque(dados, chaves, orcamento, excluir) : montarListaDeck(dados, chaves, orcamento, priorizar, excluir);
     deck.meta = dados;
     deck.orcamento = orcamento;
     deckAtual = deck;
