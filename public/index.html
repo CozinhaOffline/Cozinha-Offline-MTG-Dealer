@@ -76,7 +76,14 @@
     box-shadow: 0 8px 24px rgba(0,0,0,0.4); z-index: 2000; width: 340px; max-height: 80vh; overflow-y: auto;
     display: none; pointer-events: none; box-sizing: border-box;
   }
-  .card-popup img { width: 100%; max-height: 380px; object-fit: contain; border-radius: 6px; margin-bottom: 0.5rem; }
+  .deck-board { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 0.7rem; align-items: start; margin-top: 0.8rem; }
+  .deck-col { background: #121820; border: 1px solid var(--borda); border-radius: 8px; min-height: 80px; }
+  .deck-col h3 { margin: 0; padding: 0.45rem 0.6rem; font-size: 0.82rem; color: var(--azul-claro); border-bottom: 1px solid var(--borda); display: flex; justify-content: space-between; }
+  .deck-line { display: flex; gap: 0.35rem; align-items: flex-start; padding: 0.35rem 0.45rem; border-bottom: 1px solid #243044; }
+  .deck-line:hover { background: #1a2433; }
+  .deck-qtd { width: 42px !important; padding: 0.2rem !important; text-align: center; }
+  .deck-mini { width: 100%; margin-top: 0.2rem; padding: 0.2rem 0.3rem; font-size: 0.75rem; }
+  .tag-classe { background: #243044; border: 1px solid var(--borda); border-radius: 99px; padding: 0.1rem 0.45rem; font-size: 0.8rem; }
   .card-popup strong { color: var(--azul); }
   .topbar { position: sticky; top: 0; z-index: 500; }
   .estoque-resumo {
@@ -102,7 +109,7 @@
   <img src="logo.png" alt="Cozinha Offline Store">
   <div>
     <h1>Cozinha Offline Store</h1>
-    <p>Gestão de estoque, pedidos e orçamentos · versão 11/11</p>
+    <p>Gestão de estoque, pedidos e orçamentos · versão 14/11</p>
   </div>
 </header>
 <nav>
@@ -374,7 +381,13 @@
       <textarea id="dbChaves" placeholder="1 Sol Ring&#10;1 Doubling Season"></textarea>
       <label>Não incluir (uma por linha). Estas cartas ficam de fora mesmo que estejam no EDHREC, no estoque ou no orçamento.</label>
       <textarea id="dbExcluir" placeholder="Sol Ring&#10;Cyclonic Rift"></textarea>
-      <label style="display:flex;gap:0.45rem;align-items:center;margin:0.4rem 0 0.8rem;"><input type="checkbox" id="dbPriorizar" checked> Priorizar cartas que já estão no estoque</label>
+      <label style="display:flex;gap:0.45rem;align-items:center;margin:0.4rem 0 0.35rem;"><input type="checkbox" id="dbPriorizar" checked> Priorizar cartas que já estão no estoque</label>
+      <label style="display:flex;gap:0.45rem;align-items:center;margin:0.2rem 0;"><input type="checkbox" id="dbSemClasseA"> Excluir Classe A (cartas-chave continuam na lista)</label>
+      <label style="display:flex;gap:0.45rem;align-items:center;margin:0.2rem 0 0.6rem;"><input type="checkbox" id="dbSemReservadas"> Excluir cartas reservadas (OBS com RESERVADO). Outra versão sem a tag pode entrar.</label>
+      <label>Priorizar classes de liquidez</label>
+      <input type="text" id="dbClasseInput" list="listaClassesLiq" placeholder="Digite A, B, C ou D e pressione Enter" onkeydown="if(event.key==='Enter'){event.preventDefault();adicionarClasseDeck();}" onchange="adicionarClasseDeck()">
+      <datalist id="listaClassesLiq"><option value="A"></option><option value="B"></option><option value="C"></option><option value="D"></option></datalist>
+      <div id="dbClassesTags" style="display:flex;gap:0.35rem;flex-wrap:wrap;margin:0.35rem 0 0.8rem;"></div>
       <button class="primary" type="button" onclick="montarDeck(false)">Montar lista de referência</button>
       <button class="primary" type="button" onclick="montarDeck(true)">Montar 100 só com o estoque</button>
       <div id="dbProgresso" style="display:none;margin-top:0.7rem;">
@@ -1870,7 +1883,8 @@ document.addEventListener('click', (e) => {
 
 function exportarGrupo(cartas, nomeBase) {
   if (!cartas.length) { alert('Não há itens para exportar.'); return; }
-  const escolha = prompt('CSV para importar em:\n1 = Ligamagic\n2 = Manabox\n3 = COStorage');
+  const escolha = prompt('Exportar como:\n1 = Ligamagic\n2 = Manabox\n3 = COStorage\n4 = Txt + set code');
+  if (escolha === '4') { baixarTexto(textoSetCode(cartas), (nomeBase || 'cartas') + '-setcode.txt'); return; }
   const mapa = { '1': 'ligamagic', '2': 'manabox', '3': 'costorage' };
   if (!mapa[escolha]) return;
   baixarCsvCartas(cartas, mapa[escolha], nomeBase);
@@ -1880,6 +1894,22 @@ function csvCampo(v) {
   const s = String(v ?? '');
   if (/[;"\n\r]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
   return s;
+}
+
+function textoSetCode(cartas) {
+  return (cartas || []).map(c => {
+    const qtd = c.qtd || 1;
+    const set = String(c.setCode || '').trim();
+    return qtd + ' ' + (c.nome || '') + (set ? ' (' + set.toUpperCase() + ')' : '');
+  }).join('\n');
+}
+
+function baixarTexto(texto, nome) {
+  const blob = new Blob([texto], { type: 'text/plain;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = nome || 'lista.txt';
+  a.click();
 }
 
 function baixarCsvCartas(cartas, formato, nomeBase) {
@@ -3119,7 +3149,7 @@ async function exportarOrcamento() {
   if (!modos[quais]) return;
   const cartas = itensDoOrcamento(modos[quais]);
   if (!cartas.length) { alert('Não há itens nesse grupo.'); return; }
-  const escolha = prompt('Exportar como:\n1 = Ligamagic\n2 = Manabox\n3 = COStorage\n4 = Área de transferência');
+  const escolha = prompt('Exportar como:\n1 = Ligamagic\n2 = Manabox\n3 = COStorage\n4 = Área de transferência\n5 = Txt + set code');
   if (escolha === '4') {
     const texto = cartas.map(c => (c.qtd || 1) + ' ' + (c.nome || '')).join('\n');
     try {
@@ -3130,6 +3160,7 @@ async function exportarOrcamento() {
     }
     return;
   }
+  if (escolha === '5') { baixarTexto(textoSetCode(cartas), 'orcamento-' + (pedidoAtual.cliente || 'cliente') + '-setcode.txt'); return; }
   const mapa = { '1': 'ligamagic', '2': 'manabox', '3': 'costorage' };
   if (!mapa[escolha]) return;
   baixarCsvCartas(cartas, mapa[escolha], 'orcamento-' + (pedidoAtual.cliente || 'cliente'));
@@ -4241,17 +4272,48 @@ let sugestoesDeck = [];
 const BASICOS_COR = { W: 'Plains', U: 'Island', B: 'Swamp', R: 'Mountain', G: 'Forest' };
 const NOMES_BASICOS = new Set(['plains', 'island', 'swamp', 'mountain', 'forest']);
 
+let deckOpcoes = { excluirClasseA: false, excluirReservadas: false, classes: [] };
+let classesDeckEscolhidas = [];
+
+function cartaReservada(c) {
+  return /reservad/i.test(String(c && c.obs || ''));
+}
+
+function rankClasseDeck(liq) {
+  const prefs = (deckOpcoes && deckOpcoes.classes) || [];
+  if (!prefs.length) return 0;
+  const i = prefs.indexOf(String(liq || '').toUpperCase());
+  return i >= 0 ? prefs.length - i : -1;
+}
+
 function infoEstoqueDeck(nome) {
-  const cs = buscarNoEstoque(nome);
+  let cs = buscarNoEstoque(nome);
+  if (deckOpcoes.excluirReservadas) cs = cs.filter(c => !cartaReservada(c));
   if (!cs.length) return null;
-  cs.sort((a, b) => (parseFloat(a.pvs) || 0) - (parseFloat(b.pvs) || 0));
+  cs.sort((a, b) => {
+    const ra = rankClasseDeck(a.liquidez);
+    const rb = rankClasseDeck(b.liquidez);
+    if (ra !== rb) return rb - ra;
+    return (parseFloat(a.pvs) || 0) - (parseFloat(b.pvs) || 0);
+  });
+  const c = cs[0];
   return {
-    nome: cs[0].nome,
-    pvs: parseFloat(cs[0].pvs) || 0,
-    qtd: cs.reduce((s, c) => s + (parseInt(c.qtd, 10) || 0), 0),
-    pasta: cs[0].pasta || 'Geral',
-    set: cs[0].set || '',
-    cond: cs[0].cond || ''
+    nome: c.nome,
+    pvs: parseFloat(c.pvs) || 0,
+    qtd: cs.reduce((s, x) => s + (parseInt(x.qtd, 10) || 0), 0),
+    pasta: c.pasta || 'Geral',
+    set: c.set || '',
+    setCode: c.setCode || '',
+    cond: c.cond || '',
+    lang: c.lang || '',
+    extras: c.extras || '',
+    obs: c.obs || '',
+    liquidez: c.liquidez || '',
+    id: c.id || null,
+    ml: parseFloat(c.ml) || 0,
+    custo: parseFloat(c.custo) || 0,
+    nomePt: c.nomePt || '',
+    codigo: c.codigo || ''
   };
 }
 
@@ -4332,6 +4394,7 @@ function montarListaSoEstoque(dados, chaves, orcamento, excluir) {
     (cartas || []).forEach(c => {
       const bruto = normNome(c.nome);
       if (!bruto || excluir.has(bruto) || NOMES_BASICOS.has(bruto) || bruto === normNome(dados.nome)) return;
+      if (deckOpcoes.excluirClasseA && ehClasseA(c.nome)) return;
       const info = infoEstoqueDeck(c.nome);
       if (!info || info.qtd < 1) return;
       const chave = normNome(info.nome);
@@ -4353,7 +4416,12 @@ function montarListaSoEstoque(dados, chaves, orcamento, excluir) {
   }).filter(Boolean);
 
   function ordenarInclusao(arr) {
-    return arr.slice().sort((a, b) => (b.inclusao || 0) - (a.inclusao || 0) || ((b.meta && b.meta.sinergia) || 0) - ((a.meta && a.meta.sinergia) || 0) || a.pvs - b.pvs);
+    return arr.slice().sort((a, b) => {
+      const pa = rankClasseDeck(a.info && a.info.liquidez);
+      const pb = rankClasseDeck(b.info && b.info.liquidez);
+      if (pa !== pb) return pb - pa;
+      return (b.inclusao || 0) - (a.inclusao || 0) || ((b.meta && b.meta.sinergia) || 0) - ((a.meta && a.meta.sinergia) || 0) || a.pvs - b.pvs;
+    });
   }
   function consumir(chave) {
     const i = spells.findIndex(c => c.chave === chave);
@@ -4638,6 +4706,7 @@ function montarListaDeck(dados, chaves, orcamento, priorizar, excluir) {
     const chave = normNome(nomeFinal);
     if (!chave) return false;
     if (!ignorarExcluir && (excluir.has(normNome(nome)) || excluir.has(chave))) return false;
+    if (deckOpcoes.excluirClasseA && !forcar && (ehClasseA(nome) || ehClasseA(nomeFinal))) return false;
     if (usado.has(chave)) {
       const ja = itens.find(it => normNome(it.nome) === chave);
       if (ja && NOMES_BASICOS.has(chave)) {
@@ -4684,6 +4753,9 @@ function montarListaDeck(dados, chaves, orcamento, priorizar, excluir) {
 
   function ordenar(cartas) {
     return cartas.slice().sort((a, b) => {
+      const pa = rankClasseDeck((infoEstoqueDeck(a.nome) || {}).liquidez);
+      const pb = rankClasseDeck((infoEstoqueDeck(b.nome) || {}).liquidez);
+      if (pa !== pb) return pb - pa;
       const ea = !!infoEstoqueDeck(a.nome);
       const eb = !!infoEstoqueDeck(b.nome);
       if (priorizar && ea !== eb) return ea ? -1 : 1;
@@ -4823,17 +4895,12 @@ function renderDeck() {
   html += `<div style="margin:0.6rem 0;display:flex;gap:0.4rem;flex-wrap:wrap;">
     <button class="secondary small" type="button" onclick="copiarDeck(false)">Copiar lista completa</button>
     <button class="secondary small" type="button" onclick="copiarDeck(true)">Copiar só o que temos</button>
+    <button class="secondary small" type="button" onclick="exportarDeck()">Exportar</button>
     <button class="primary small" type="button" onclick="deckParaPedidos()">Levar o que temos para Pedidos</button>
+    <button class="primary small" type="button" onclick="gerarOrcamentoDoDeck()">Gerar orçamento</button>
     <button class="primary small" type="button" id="btnCompletarDeck" onclick="completarDeck()">Completar deck</button>
   </div>`;
-  html += `<div style="overflow:auto;"><table><thead><tr>${thDeck('Qtd','qtd')}${thDeck('Carta','nome')}${thDeck('Função','categoria')}${thDeck('EDHREC','inclusao')}${thDeck('Estoque','estoque')}${thDeck('Pasta','pasta')}${thDeck('PVS','pvs')}<th>Subtotal</th></tr></thead><tbody>`;
-  itens.forEach(it => {
-    const pct = it.inclusao == null ? '—' : Math.round(it.inclusao * 100) + '%';
-    const est = !it.noEstoque ? 'não temos' : (it.foraOrcamento ? 'no estoque, fora do orçamento' : `${it.qtdNoEstoque} un.`);
-    const sub = it.noEstoque ? formatMoney((it.pvs || 0) * (it.qtdNoEstoque || 0)) : '—';
-    html += `<tr><td>${it.qtd}</td><td class="card-name" data-nome="${esc(it.nome)}">${esc(it.nome)}</td><td>${esc(it.categoria)}</td><td>${pct}</td><td>${est}</td><td>${esc(it.pasta || '—')}</td><td>${it.pvs == null ? '—' : formatMoney(it.pvs)}</td><td>${sub}</td></tr>`;
-  });
-  html += '</tbody></table></div>';
+  html += quadroDeck();
   html += renderSugestoesDeck();
   box.innerHTML = html;
   box.style.display = 'block';
@@ -4861,6 +4928,12 @@ async function montarDeck(soEstoque) {
   const chaves = document.getElementById('dbChaves').value.split('\n').map(lerLinhaLista).filter(x => x.nome);
   const excluir = new Set(document.getElementById('dbExcluir').value.split('\n').map(l => normNome(lerLinhaLista(l).nome)).filter(Boolean));
   const priorizar = document.getElementById('dbPriorizar').checked;
+  recarregarClasseASet();
+  deckOpcoes = {
+    excluirClasseA: document.getElementById('dbSemClasseA').checked,
+    excluirReservadas: document.getElementById('dbSemReservadas').checked,
+    classes: classesDeckEscolhidas.slice()
+  };
   const status = document.getElementById('dbStatus');
   status.textContent = '';
   document.getElementById('dbResultado').style.display = 'none';
@@ -4880,6 +4953,7 @@ async function montarDeck(soEstoque) {
     const deck = soEstoque ? montarListaSoEstoque(dados, chaves, orcamento, excluir) : montarListaDeck(dados, chaves, orcamento, priorizar, excluir);
     deck.meta = dados;
     deck.orcamento = orcamento;
+    fixarVersoesDeck(deck);
     deckAtual = deck;
     setProgressoDeck(100, 'Lista pronta.');
     renderDeck();
@@ -5035,13 +5109,16 @@ async function completarDeck() {
     const estoqueMap = new Map();
     (estoque || []).forEach(c => {
       if (!(parseFloat(c.qtd) > 0) || !c.nome) return;
+      if (deckOpcoes.excluirReservadas && cartaReservada(c)) return;
+      if (deckOpcoes.excluirClasseA && ehClasseA(c.nome)) return;
       const k = normNome(c.nome);
       const pvs = parseFloat(c.pvs) || 0;
+      const rank = rankClasseDeck(c.liquidez);
       const prev = estoqueMap.get(k);
-      if (!prev) estoqueMap.set(k, { nome: c.nome, pvs, qtd: parseInt(c.qtd, 10) || 0, pasta: c.pasta || 'Geral' });
+      if (!prev) estoqueMap.set(k, { nome: c.nome, pvs, qtd: parseInt(c.qtd, 10) || 0, pasta: c.pasta || 'Geral', rank });
       else {
         prev.qtd += parseInt(c.qtd, 10) || 0;
-        if (pvs < prev.pvs) { prev.pvs = pvs; prev.pasta = c.pasta || prev.pasta; prev.nome = c.nome; }
+        if (rank > prev.rank || (rank === prev.rank && pvs < prev.pvs)) { prev.pvs = pvs; prev.pasta = c.pasta || prev.pasta; prev.nome = c.nome; prev.rank = rank; }
       }
     });
     setProgressoDeck(8, 'Lendo o texto das cartas que faltam...');
@@ -5145,13 +5222,25 @@ function adicionarSubstituto(id) {
       nome: info.nome,
       qtd: 1,
       categoria: s.categoria || 'Substituto',
+      funcao: s.categoria || 'Substituto',
       noEstoque: true,
       foraOrcamento: !cabe,
       pvs: info.pvs,
       qtdNoEstoque: cabe ? 1 : 0,
       pasta: info.pasta,
       set: info.set,
+      setCode: info.setCode || '',
       cond: info.cond,
+      lang: info.lang || '',
+      extras: info.extras || '',
+      obs: info.obs || '',
+      liquidez: info.liquidez || '',
+      estoqueId: info.id || null,
+      nomePt: info.nomePt || '',
+      ml: info.ml || 0,
+      custo: info.custo || 0,
+      codigo: info.codigo || '',
+      qtdDisponivel: info.qtd || 0,
       inclusao: null,
       forcar: false
     });
@@ -5164,6 +5253,306 @@ function adicionarSubstituto(id) {
     return true;
   });
   renderDeck();
+}
+
+const FUNCOES_DECK = ['Comandante', 'Carta-chave', 'Ramp', 'Compra', 'Remoção', 'Wipe', 'Counter', 'Tutor', 'Proteção', 'Recursão', 'Tokens', 'Sinergia', 'Artefato de mana', 'Criatura', 'Instant', 'Feitiço', 'Artefato', 'Encantamento', 'Planeswalker', 'Terreno', 'Terreno básico', 'Complemento', 'Substituto', 'Outras'];
+
+function adicionarClasseDeck() {
+  const el = document.getElementById('dbClasseInput');
+  const bruto = el ? String(el.value || '').trim() : '';
+  if (bruto) {
+    bruto.toUpperCase().split(/[^ABCD]+/).forEach(p => {
+      if (p && !classesDeckEscolhidas.includes(p)) classesDeckEscolhidas.push(p);
+    });
+    el.value = '';
+  }
+  const box = document.getElementById('dbClassesTags');
+  if (!box) return;
+  box.innerHTML = classesDeckEscolhidas.map(c => `<span class="tag-classe">${c} <button type="button" class="secondary small" onclick="removerClasseDeck('${c}')">×</button></span>`).join('');
+}
+
+function removerClasseDeck(c) {
+  classesDeckEscolhidas = classesDeckEscolhidas.filter(x => x !== c);
+  adicionarClasseDeck();
+}
+
+function aplicarCopiaNoItem(it, info) {
+  if (!it || !info) return;
+  it.nome = info.nome;
+  it.pvs = info.pvs;
+  it.pasta = info.pasta;
+  it.set = info.set;
+  it.setCode = info.setCode || '';
+  it.cond = info.cond || '';
+  it.lang = info.lang || '';
+  it.extras = info.extras || '';
+  it.obs = info.obs || '';
+  it.liquidez = info.liquidez || '';
+  it.estoqueId = info.id || null;
+  it.nomePt = info.nomePt || '';
+  it.ml = info.ml || 0;
+  it.custo = info.custo || 0;
+  it.codigo = info.codigo || '';
+  it.qtdDisponivel = info.qtd || 0;
+  it.noEstoque = true;
+}
+
+function fixarVersoesDeck(deck) {
+  (deck.itens || []).forEach(it => {
+    if (!it.funcao) it.funcao = it.categoria || 'Outras';
+    if (!it.noEstoque) return;
+    const info = infoEstoqueDeck(it.nome);
+    if (!info) return;
+    aplicarCopiaNoItem(it, info);
+    it.qtdNoEstoque = it.foraOrcamento ? 0 : Math.min(it.qtd, info.qtd);
+  });
+}
+
+function recalcularGastoDeck() {
+  if (!deckAtual) return;
+  let g = 0;
+  deckAtual.itens.forEach(it => {
+    if (it.noEstoque && !it.foraOrcamento) g += (parseFloat(it.pvs) || 0) * (parseInt(it.qtdNoEstoque, 10) || 0);
+  });
+  deckAtual.gasto = Math.round(g * 100) / 100;
+}
+
+function funcoesEmUso() {
+  const nomes = new Set(FUNCOES_DECK);
+  (deckAtual && deckAtual.itens || []).forEach(it => { if (it.funcao) nomes.add(it.funcao); });
+  return [...nomes];
+}
+
+function quadroDeck() {
+  const ordem = new Map(FUNCOES_DECK.map((f, i) => [f, i]));
+  const grupos = new Map();
+  deckAtual.itens.forEach((it, i) => {
+    const f = it.funcao || it.categoria || 'Outras';
+    if (!grupos.has(f)) grupos.set(f, []);
+    grupos.get(f).push({ it, i });
+  });
+  const chaves = [...grupos.keys()].sort((a, b) => {
+    const ia = ordem.has(a) ? ordem.get(a) : 500;
+    const ib = ordem.has(b) ? ordem.get(b) : 500;
+    if (ia !== ib) return ia - ib;
+    return a.localeCompare(b, 'pt');
+  });
+  const opcoesFun = funcoesEmUso().map(f => `<option value="${esc(f)}">${esc(f)}</option>`).join('') + '<option value="__nova__">Nova função...</option>';
+  let html = `<div class="filters">
+    <div><label>Adicionar carta</label><input type="text" id="dbAddNome" list="listaNomesDeck" placeholder="Nome em inglês"></div>
+    <div style="max-width:90px;"><label>Qtd</label><input type="number" id="dbAddQtd" value="1" min="1"></div>
+    <div><label>Função</label><input type="text" id="dbAddFuncao" list="listaFuncoesDeck" placeholder="Ramp, Compra, Remoção..."></div>
+    <div style="align-self:end;"><button class="primary small" type="button" onclick="adicionarCartaDeckManual()">Adicionar</button></div>
+  </div><datalist id="listaFuncoesDeck">${funcoesEmUso().map(f => `<option value="${esc(f)}"></option>`).join('')}</datalist>`;
+  html += '<div class="deck-board">';
+  chaves.forEach(f => {
+    const linhas = grupos.get(f);
+    const qtd = linhas.reduce((s, x) => s + (parseInt(x.it.qtd, 10) || 0), 0);
+    html += `<section class="deck-col"><h3><span>${esc(f)}</span><span>${qtd}</span></h3>`;
+    linhas.sort((a, b) => String(a.it.nome).localeCompare(String(b.it.nome), 'pt'));
+    linhas.forEach(({ it, i }) => {
+      const copias = buscarNoEstoque(it.nome);
+      const pct = it.inclusao == null ? '' : Math.round(it.inclusao * 100) + '%';
+      let versoes = '<option value="">Fora do estoque</option>';
+      if (copias.length) {
+        let escolhida = copias.findIndex(c => it.estoqueId && c.id === it.estoqueId);
+        if (escolhida < 0) escolhida = copias.findIndex(c => (c.setCode || '') === (it.setCode || '') && (c.cond || '') === (it.cond || '') && (c.lang || '') === (it.lang || '') && (c.pasta || '') === (it.pasta || '') && (c.extras || '') === (it.extras || ''));
+        versoes = copias.map((c, ci) => `<option value="${ci}"${ci === escolhida ? ' selected' : ''}>${esc(rotuloCopia(c))}</option>`).join('');
+      }
+      html += `<div class="deck-line">
+        <input class="deck-qtd" type="number" min="1" value="${it.qtd || 1}" onchange="mudarQtdDeck(${i}, this.value)">
+        <div style="flex:1;min-width:0;">
+          <div class="card-name" data-nome="${esc(it.nome)}" data-set="${esc(it.setCode || '')}">${esc(it.nome)}</div>
+          <div class="muted">${esc(it.setCode ? String(it.setCode).toUpperCase() : (it.noEstoque ? '' : 'não temos'))}${it.liquidez ? ' · ' + esc(it.liquidez) : ''}${pct ? ' · ' + pct : ''} · ${it.pvs == null ? '—' : formatMoney(it.pvs)}</div>
+          <select class="deck-mini" onchange="trocarVersaoDeck(${i}, this.value)">${versoes}</select>
+          <select class="deck-mini" onchange="mudarFuncaoDeck(${i}, this.value)">${opcoesFun.replace(`value="${esc(f)}"`, `value="${esc(f)}" selected`)}</select>
+        </div>
+        <button class="secondary small" type="button" style="background:#c41e3a;" onclick="removerCartaDeck(${i})">×</button>
+      </div>`;
+    });
+    html += '</section>';
+  });
+  html += '</div>';
+  return html;
+}
+
+function rotuloCopia(c) {
+  const res = cartaReservada(c) ? ' · RESERVADO' : '';
+  const sigla = (c.setCode || c.set || '-').toString().toUpperCase();
+  return `${sigla} · ${c.cond || '-'} · ${c.lang || '-'} · ${c.pasta || 'Geral'} · ${formatMoney(c.pvs)} · ${c.liquidez || '-'}${c.extras ? ' · ' + c.extras : ''}${res}`;
+}
+
+function mudarQtdDeck(i, valor) {
+  const it = deckAtual && deckAtual.itens[i];
+  if (!it) return;
+  it.qtd = Math.max(1, parseInt(valor, 10) || 1);
+  if (it.noEstoque) {
+    const disp = it.qtdDisponivel || it.qtd;
+    it.qtdNoEstoque = Math.min(it.qtd, disp);
+    it.foraOrcamento = false;
+  }
+  recalcularGastoDeck();
+  renderDeck();
+}
+
+function removerCartaDeck(i) {
+  if (!deckAtual) return;
+  deckAtual.itens.splice(i, 1);
+  recalcularGastoDeck();
+  renderDeck();
+}
+
+function mudarFuncaoDeck(i, valor) {
+  const it = deckAtual && deckAtual.itens[i];
+  if (!it) return;
+  if (valor === '__nova__') {
+    const n = prompt('Nome da função. Exemplos: Ramp, Compra, Remoção, Sinergia');
+    if (!n || !n.trim()) { renderDeck(); return; }
+    it.funcao = n.trim();
+  } else it.funcao = valor;
+  renderDeck();
+}
+
+function trocarVersaoDeck(i, indice) {
+  const it = deckAtual && deckAtual.itens[i];
+  if (!it) return;
+  const copias = buscarNoEstoque(it.nome);
+  const c = copias[parseInt(indice, 10)];
+  if (!c) { renderDeck(); return; }
+  aplicarCopiaNoItem(it, {
+    nome: c.nome,
+    pvs: parseFloat(c.pvs) || 0,
+    qtd: parseInt(c.qtd, 10) || 0,
+    pasta: c.pasta || 'Geral',
+    set: c.set || '',
+    setCode: c.setCode || '',
+    cond: c.cond || '',
+    lang: c.lang || '',
+    extras: c.extras || '',
+    obs: c.obs || '',
+    liquidez: c.liquidez || '',
+    id: c.id || null,
+    ml: parseFloat(c.ml) || 0,
+    custo: parseFloat(c.custo) || 0,
+    nomePt: c.nomePt || '',
+    codigo: c.codigo || ''
+  });
+  it.qtdNoEstoque = Math.min(it.qtd, parseInt(c.qtd, 10) || 0);
+  it.foraOrcamento = false;
+  recalcularGastoDeck();
+  renderDeck();
+}
+
+function adicionarCartaDeckManual() {
+  if (!deckAtual) { alert('Monte um deck antes.'); return; }
+  const nome = (document.getElementById('dbAddNome').value || '').trim();
+  const qtd = Math.max(1, parseInt(document.getElementById('dbAddQtd').value, 10) || 1);
+  const funcao = (document.getElementById('dbAddFuncao').value || '').trim() || 'Outras';
+  if (!nome) { alert('Informe o nome da carta.'); return; }
+  const info = infoEstoqueDeck(nome);
+  const nomeFinal = info ? info.nome : nome;
+  const chave = normNome(nomeFinal);
+  const ja = deckAtual.itens.find(it => normNome(it.nome) === chave);
+  if (ja && !NOMES_BASICOS.has(chave)) { alert('Essa carta já está na lista.'); return; }
+  if (ja && NOMES_BASICOS.has(chave)) {
+    ja.qtd += qtd;
+    ja.funcao = funcao;
+    if (info) {
+      aplicarCopiaNoItem(ja, info);
+      ja.qtdNoEstoque = Math.min(ja.qtd, info.qtd);
+      ja.foraOrcamento = false;
+    }
+  } else {
+    const it = {
+      nome: nomeFinal, qtd, categoria: funcao, funcao, noEstoque: !!info, foraOrcamento: false,
+      pvs: info ? info.pvs : null, qtdNoEstoque: info ? Math.min(qtd, info.qtd) : 0,
+      pasta: info ? info.pasta : '', set: info ? info.set : '', cond: info ? info.cond : '',
+      inclusao: null, forcar: false
+    };
+    if (info) aplicarCopiaNoItem(it, info);
+    deckAtual.itens.push(it);
+  }
+  recalcularGastoDeck();
+  renderDeck();
+}
+
+function cartasExportDeck() {
+  return (deckAtual.itens || []).map(it => ({
+    qtd: it.qtd || 1,
+    nome: it.nome || '',
+    nomePt: it.nomePt || '',
+    set: it.set || '',
+    setCode: it.setCode || '',
+    cond: it.cond || '',
+    lang: it.lang || '',
+    extras: it.extras || '',
+    pasta: it.pasta || '',
+    obs: it.obs || '',
+    ml: it.ml || it.pvs || 0,
+    custo: it.custo || 0,
+    pvs: it.pvs || 0,
+    liquidez: it.liquidez || '',
+    codigo: it.codigo || ''
+  }));
+}
+
+function exportarDeck() {
+  if (!deckAtual) return;
+  const escolha = prompt('Exportar a lista como:\n1 = Ligamagic\n2 = Manabox\n3 = COStorage\n4 = Txt + set code\n5 = Área de transferência');
+  const cartas = cartasExportDeck();
+  if (!cartas.length) { alert('A lista está vazia.'); return; }
+  if (escolha === '4') { baixarTexto(textoSetCode(cartas), 'deck-setcode.txt'); return; }
+  if (escolha === '5') {
+    const texto = cartas.map(c => (c.qtd || 1) + ' ' + c.nome).join('\n');
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(texto).then(() => alert('Lista copiada.')).catch(() => prompt('Copie a lista:', texto));
+    else prompt('Copie a lista:', texto);
+    return;
+  }
+  const mapa = { '1': 'ligamagic', '2': 'manabox', '3': 'costorage' };
+  if (!mapa[escolha]) return;
+  baixarCsvCartas(cartas, mapa[escolha], 'deck-' + ((deckAtual.meta && deckAtual.meta.nome) || 'comandante'));
+}
+
+function gerarOrcamentoDoDeck() {
+  if (!deckAtual || !deckAtual.itens.length) { alert('Monte um deck antes.'); return; }
+  const itens = deckAtual.itens.map(it => {
+    const copias = buscarNoEstoque(it.nome);
+    const card = copias.find(c => it.estoqueId && c.id === it.estoqueId) || copias.find(c => (c.setCode || '') === (it.setCode || '') && (c.cond || '') === (it.cond || '') && (c.lang || '') === (it.lang || '')) || null;
+    if (!card) return { nome: it.nome, qtd: it.qtd || 1, encontrado: false, pasta: '-' };
+    const qtd = Math.min(it.qtd || 1, parseFloat(card.qtd) || 0);
+    const preco = parseFloat(card.pvs) || 0;
+    return {
+      qtd, nome: card.nome, nomePt: card.nomePt || '', set: card.set, setCode: card.setCode || '',
+      lang: card.lang, cond: card.cond, extras: card.extras, obs: card.obs || '',
+      preco, total: qtd * preco, encontrado: qtd > 0, pasta: card.pasta || 'Geral',
+      estoqueId: card.id || null, codigoEntrada: card.codigo || '', custo: card.custo || 0,
+      ml: card.ml || 0, liquidez: card.liquidez || '', cardRef: card, alternativas: copias
+    };
+  });
+  const clienteEl = document.getElementById('pedCliente');
+  const titulo = (deckAtual.meta && deckAtual.meta.nome) || 'Deck';
+  pedidoAtual = {
+    id: 'orc_' + Date.now(),
+    cliente: (clienteEl && clienteEl.value) || 'Cliente',
+    titulo,
+    itens,
+    total: 0,
+    descontoPct: 0,
+    frete: 0,
+    precosLiberados: false,
+    reservado: false,
+    data: new Date().toLocaleString('pt-BR'),
+    codigo: null
+  };
+  const lista = deckAtual.itens.map(it => (it.qtd || 1) + ' ' + it.nome).join('\n');
+  const listaEl = document.getElementById('pedLista');
+  const tituloEl = document.getElementById('pedTitulo');
+  if (listaEl) listaEl.value = lista;
+  if (tituloEl) tituloEl.value = titulo;
+  ordenarItensOrcamento();
+  totalizarPedido();
+  document.querySelector('nav button[data-tab="pedidos"]').click();
+  renderPedidoTabela();
 }
 
 function copiarDeck(soEstoque) {
