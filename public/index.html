@@ -72,17 +72,16 @@
   #estoqueTable th, #estoqueTable td { padding: 0.3rem 0.35rem; font-size: 0.8rem; }
   #estoqueTable input.edit-input { width: 70px; padding: 0.2rem 0.3rem; font-size: 0.78rem; }
   .card-popup {
-    position: fixed; background: var(--card); color: var(--texto); border: 1px solid var(--borda); border-radius: 10px; padding: 0.8rem;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.4); z-index: 2000; width: 340px; max-height: 80vh; overflow-y: auto;
-    display: none; pointer-events: none; box-sizing: border-box;
+    position: fixed; background: var(--card); color: var(--texto); border: 1px solid var(--borda); border-radius: 8px; padding: 0.45rem;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4); z-index: 2000; width: 220px; max-height: 70vh; overflow: auto;
+    display: none; pointer-events: none; box-sizing: border-box; font-size: 0.75rem;
   }
-  .deck-board { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 0.7rem; align-items: start; margin-top: 0.8rem; }
-  .deck-col { background: #121820; border: 1px solid var(--borda); border-radius: 8px; min-height: 80px; }
-  .deck-col h3 { margin: 0; padding: 0.45rem 0.6rem; font-size: 0.82rem; color: var(--azul-claro); border-bottom: 1px solid var(--borda); display: flex; justify-content: space-between; }
-  .deck-line { display: flex; gap: 0.35rem; align-items: flex-start; padding: 0.35rem 0.45rem; border-bottom: 1px solid #243044; }
-  .deck-line:hover { background: #1a2433; }
-  .deck-qtd { width: 42px !important; padding: 0.2rem !important; text-align: center; }
-  .deck-mini { width: 100%; margin-top: 0.2rem; padding: 0.2rem 0.3rem; font-size: 0.75rem; }
+  .card-popup img { width: 100%; max-height: 260px; object-fit: contain; border-radius: 4px; margin-bottom: 0.35rem; display: block; }
+  .deck-lista { width: 100%; border-collapse: collapse; margin-top: 0.4rem; font-size: 0.78rem; }
+  .deck-lista th, .deck-lista td { padding: 0.12rem 0.28rem; }
+  .deck-lista .grupo td { background: #243044; color: var(--azul-claro); font-weight: 650; font-size: 0.78rem; padding: 0.28rem 0.4rem; }
+  .deck-lista input, .deck-lista select { width: 100%; padding: 0.12rem 0.25rem; font-size: 0.75rem; }
+  .deck-qtd { width: 46px !important; text-align: center; }
   .tag-classe { background: #243044; border: 1px solid var(--borda); border-radius: 99px; padding: 0.1rem 0.45rem; font-size: 0.8rem; }
   .card-popup strong { color: var(--azul); }
   .topbar { position: sticky; top: 0; z-index: 500; }
@@ -109,7 +108,7 @@
   <img src="logo.png" alt="Cozinha Offline Store">
   <div>
     <h1>Cozinha Offline Store</h1>
-    <p>Gestão de estoque, pedidos e orçamentos · versão 14/11</p>
+    <p>Gestão de estoque, pedidos e orçamentos · versão 14/11b</p>
   </div>
 </header>
 <nav>
@@ -5344,35 +5343,32 @@ function quadroDeck() {
     <div><label>Função</label><input type="text" id="dbAddFuncao" list="listaFuncoesDeck" placeholder="Ramp, Compra, Remoção..."></div>
     <div style="align-self:end;"><button class="primary small" type="button" onclick="adicionarCartaDeckManual()">Adicionar</button></div>
   </div><datalist id="listaFuncoesDeck">${funcoesEmUso().map(f => `<option value="${esc(f)}"></option>`).join('')}</datalist>`;
-  html += '<div class="deck-board">';
+  html += '<div style="overflow:auto;"><table class="deck-lista"><thead><tr><th style="width:52px;">Qtd</th><th>Carta</th><th style="width:34%;">Versão</th><th style="width:150px;">Função</th><th style="width:78px;">PVS</th><th style="width:34px;"></th></tr></thead><tbody>';
   chaves.forEach(f => {
     const linhas = grupos.get(f);
     const qtd = linhas.reduce((s, x) => s + (parseInt(x.it.qtd, 10) || 0), 0);
-    html += `<section class="deck-col"><h3><span>${esc(f)}</span><span>${qtd}</span></h3>`;
+    html += `<tr class="grupo"><td colspan="6">${esc(f)} · ${qtd}</td></tr>`;
     linhas.sort((a, b) => String(a.it.nome).localeCompare(String(b.it.nome), 'pt'));
     linhas.forEach(({ it, i }) => {
       const copias = buscarNoEstoque(it.nome);
-      const pct = it.inclusao == null ? '' : Math.round(it.inclusao * 100) + '%';
       let versoes = '<option value="">Fora do estoque</option>';
       if (copias.length) {
         let escolhida = copias.findIndex(c => it.estoqueId && c.id === it.estoqueId);
         if (escolhida < 0) escolhida = copias.findIndex(c => (c.setCode || '') === (it.setCode || '') && (c.cond || '') === (it.cond || '') && (c.lang || '') === (it.lang || '') && (c.pasta || '') === (it.pasta || '') && (c.extras || '') === (it.extras || ''));
         versoes = copias.map((c, ci) => `<option value="${ci}"${ci === escolhida ? ' selected' : ''}>${esc(rotuloCopia(c))}</option>`).join('');
       }
-      html += `<div class="deck-line">
-        <input class="deck-qtd" type="number" min="1" value="${it.qtd || 1}" onchange="mudarQtdDeck(${i}, this.value)">
-        <div style="flex:1;min-width:0;">
-          <div class="card-name" data-nome="${esc(it.nome)}" data-set="${esc(it.setCode || '')}">${esc(it.nome)}</div>
-          <div class="muted">${esc(it.setCode ? String(it.setCode).toUpperCase() : (it.noEstoque ? '' : 'não temos'))}${it.liquidez ? ' · ' + esc(it.liquidez) : ''}${pct ? ' · ' + pct : ''} · ${it.pvs == null ? '—' : formatMoney(it.pvs)}</div>
-          <select class="deck-mini" onchange="trocarVersaoDeck(${i}, this.value)">${versoes}</select>
-          <select class="deck-mini" onchange="mudarFuncaoDeck(${i}, this.value)">${opcoesFun.replace(`value="${esc(f)}"`, `value="${esc(f)}" selected`)}</select>
-        </div>
-        <button class="secondary small" type="button" style="background:#c41e3a;" onclick="removerCartaDeck(${i})">×</button>
-      </div>`;
+      const funSel = opcoesFun.replace(`value="${esc(f)}"`, `value="${esc(f)}" selected`);
+      html += `<tr>
+        <td><input class="deck-qtd" type="number" min="1" value="${it.qtd || 1}" onchange="mudarQtdDeck(${i}, this.value)"></td>
+        <td class="card-name" data-nome="${esc(it.nome)}" data-set="${esc(it.setCode || '')}">${esc(it.nome)}</td>
+        <td><select onchange="trocarVersaoDeck(${i}, this.value)">${versoes}</select></td>
+        <td><select onchange="mudarFuncaoDeck(${i}, this.value)">${funSel}</select></td>
+        <td>${it.pvs == null ? '—' : formatMoney(it.pvs)}</td>
+        <td><button class="secondary small" type="button" style="background:#c41e3a;margin:0;" onclick="removerCartaDeck(${i})">×</button></td>
+      </tr>`;
     });
-    html += '</section>';
   });
-  html += '</div>';
+  html += '</tbody></table></div>';
   return html;
 }
 
