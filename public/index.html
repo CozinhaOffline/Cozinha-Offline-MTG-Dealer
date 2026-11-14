@@ -72,11 +72,11 @@
   #estoqueTable th, #estoqueTable td { padding: 0.3rem 0.35rem; font-size: 0.8rem; }
   #estoqueTable input.edit-input { width: 70px; padding: 0.2rem 0.3rem; font-size: 0.78rem; }
   .card-popup {
-    position: fixed; background: var(--card); color: var(--texto); border: 1px solid var(--borda); border-radius: 8px; padding: 0.45rem;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.4); z-index: 2000; width: 220px; max-height: 70vh; overflow: auto;
-    display: none; pointer-events: none; box-sizing: border-box; font-size: 0.75rem;
+    position: fixed; background: var(--card); color: var(--texto); border: 1px solid var(--borda); border-radius: 8px; padding: 0.7rem;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4); z-index: 2000; width: 440px; max-height: 92vh; overflow: auto;
+    display: none; pointer-events: none; box-sizing: border-box; font-size: 0.85rem;
   }
-  .card-popup img { width: 100%; max-height: 260px; object-fit: contain; border-radius: 4px; margin-bottom: 0.35rem; display: block; }
+  .card-popup img { width: 100%; max-height: 520px; object-fit: contain; border-radius: 4px; margin-bottom: 0.35rem; display: block; }
   .deck-lista { width: 100%; border-collapse: collapse; margin-top: 0.4rem; font-size: 0.78rem; }
   .deck-lista th, .deck-lista td { padding: 0.12rem 0.28rem; }
   .deck-lista .grupo td { background: #243044; color: var(--azul-claro); font-weight: 650; font-size: 0.78rem; padding: 0.28rem 0.4rem; }
@@ -108,7 +108,7 @@
   <img src="logo.png" alt="Cozinha Offline Store">
   <div>
     <h1>Cozinha Offline Store</h1>
-    <p>Gestão de estoque, pedidos e orçamentos · versão 14/11b</p>
+    <p>Gestão de estoque, pedidos e orçamentos · versão 14/11c</p>
   </div>
 </header>
 <nav>
@@ -5603,8 +5603,8 @@ document.addEventListener('mouseover', async function(e) {
 
     function posicionar() {
       const rect = td.getBoundingClientRect();
-      const pw = cardPopup.offsetWidth || 260;
-      const ph = cardPopup.offsetHeight || 400;
+      const pw = cardPopup.offsetWidth || 440;
+      const ph = cardPopup.offsetHeight || 620;
       const margin = 8;
       let left = rect.right + 12;
       let top = rect.top;
