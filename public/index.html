@@ -108,7 +108,7 @@
   <img src="logo.png" alt="Cozinha Offline Store">
   <div>
     <h1>Cozinha Offline Store</h1>
-    <p>Gestão de estoque, pedidos e orçamentos · versão 14/11c</p>
+    <p>Gestão de estoque, pedidos e orçamentos · versão 16/11</p>
   </div>
 </header>
 <nav>
@@ -4451,17 +4451,53 @@ function montarListaSoEstoque(dados, chaves, orcamento, excluir) {
   }
 
   let landAlvo = cont.land || 37;
-  if (!(landAlvo >= 33 && landAlvo <= 40)) landAlvo = landAlvo < 33 ? 33 : 38;
+  if (landAlvo < 35) landAlvo = 35;
+  if (landAlvo > 40) landAlvo = 40;
+  function gastoNaoBasico() {
+    return itens.reduce((s, it) => {
+      const naoBasico = (it.categoria === 'Terreno' || it.terreno) && !NOMES_BASICOS.has(normNome(it.nome));
+      return s + (naoBasico ? (it.pvs || 0) * (it.qtd || 0) : 0);
+    }, 0);
+  }
+  function reservaPiso() {
+    if (orcamento == null || !isFinite(orcamento)) return 0;
+    const falta = Math.max(0, orcamento * 0.2 - gastoNaoBasico());
+    if (falta <= 0.001) return 0;
+    let disp = 0;
+    for (const c of lands) {
+      disp += c.pvs || 0;
+      if (disp >= falta) return falta;
+    }
+    return disp;
+  }
+  function precoBasicoMin() {
+    const vivos = basicos.filter(b => b.sobra > 0);
+    if (!vivos.length) return 0;
+    return Math.min.apply(null, vivos.map(b => b.pvs));
+  }
+  function cabeNonbasicAgora(pvs) {
+    if (cartas99() >= 99) return false;
+    if (orcamento == null || !isFinite(orcamento)) return true;
+    const faltam = Math.max(0, landAlvo - landsNoDeck() - 1);
+    return gasto + pvs + faltam * precoBasicoMin() <= orcamento + 0.001;
+  }
   function terrasDisponiveis() {
     return lands.length + basicos.reduce((s, b) => s + b.sobra, 0);
   }
   function slotsTerreno() {
     return Math.min(Math.max(0, landAlvo - landsNoDeck()), terrasDisponiveis());
   }
-  function cabeBruto(pvs) {
+  function cabeSpell(pvs) {
     if (cartas99() >= 99) return false;
     if (orcamento == null || !isFinite(orcamento)) return true;
-    return gasto + pvs <= orcamento + 0.001;
+    const faltamTerrenos = Math.max(0, landAlvo - landsNoDeck());
+    return gasto + pvs + faltamTerrenos * precoBasicoMin() + reservaPiso() <= orcamento + 0.001;
+  }
+  function cabeBruto(pvs, tipo) {
+    if (cartas99() >= 99) return false;
+    if (orcamento == null || !isFinite(orcamento)) return true;
+    const reserva = tipo === 'land' || tipo === 'basic' ? 0 : reservaPiso();
+    return gasto + pvs + reserva <= orcamento + 0.001;
   }
   function cabeTipo(pvs, tipo) {
     if (!cabeBruto(pvs)) return false;
@@ -4479,7 +4515,8 @@ function montarListaSoEstoque(dados, chaves, orcamento, excluir) {
     const cL = soma(precosLands(), guardLands, tipo === 'land' ? { preco: pvs } : null);
     const cS = soma(precosSpells(), guardSpells, tipo === 'spell' ? { preco: pvs } : null);
     if (!isFinite(cL) || !isFinite(cS)) return false;
-    return gasto + pvs + cL + cS <= orcamento + 0.001;
+    const reserva = tipo === 'spell' ? reservaPiso() : 0;
+    return gasto + pvs + cL + cS + reserva <= orcamento + 0.001;
   }
   function deckMinimoCabe() {
     if (orcamento == null || !isFinite(orcamento)) return true;
@@ -4495,7 +4532,8 @@ function montarListaSoEstoque(dados, chaves, orcamento, excluir) {
   function incluir(c, categoria, forcar) {
     if (!c || usado.has(c.chave) || cartas99() >= 99) return false;
     const tipo = (c.terreno || categoria === 'Terreno' || categoria === 'Terreno básico') ? 'land' : 'spell';
-    const ok = modoAperto ? cabeBruto(c.pvs) : cabeTipo(c.pvs, tipo);
+    const pisoAberto = categoria === 'Terreno' && orcamento != null && isFinite(orcamento) && gastoNaoBasico() < orcamento * 0.2 - 0.001;
+    const ok = pisoAberto ? cabeNonbasicAgora(c.pvs) : (tipo === 'land' ? cabeBruto(c.pvs, 'land') : cabeSpell(c.pvs));
     if (!ok) return false;
     gasto += c.pvs;
     usado.add(c.chave);
@@ -4511,14 +4549,16 @@ function montarListaSoEstoque(dados, chaves, orcamento, excluir) {
       set: c.info.set || '',
       cond: c.info.cond || '',
       inclusao: c.meta ? inclusaoEdh(c.meta) : null,
-      forcar: !!forcar
+      forcar: !!forcar,
+      terreno: !!c.terreno
     });
     consumir(c.chave);
     return true;
   }
   function incluirBasico(b) {
     if (!b || b.sobra <= 0 || cartas99() >= 99) return false;
-    const ok = modoAperto ? cabeBruto(b.pvs) : cabeTipo(b.pvs, 'land');
+    if (orcamento != null && isFinite(orcamento) && gasto + b.pvs + reservaPiso() > orcamento + 0.001) return false;
+    const ok = modoAperto ? true : cabeBruto(b.pvs, 'basic');
     if (!ok) return false;
     const chave = normNome(b.nome);
     const ja = itens.find(it => normNome(it.nome) === chave);
@@ -4579,6 +4619,20 @@ function montarListaSoEstoque(dados, chaves, orcamento, excluir) {
     });
   }
 
+  function priorizarNaoBasicos() {
+    const piso = (orcamento == null || !isFinite(orcamento)) ? 0 : orcamento * 0.2;
+    const meta = cont.nonbasic || Math.round(landAlvo * 0.45);
+    ordenarInclusao(lands).forEach(c => {
+      if (cartas99() >= 99 || landsNoDeck() >= landAlvo) return;
+      if (piso > 0) {
+        if (gastoNaoBasico() >= piso - 0.001) return;
+      } else if (qtdCat('Terreno') >= meta) return;
+      incluir(c, 'Terreno');
+    });
+  }
+
+  priorizarNaoBasicos();
+
   if (!modoAperto) {
     const artAlvo = cont.artifact || 10;
     const utilAlvo = Math.min(spells.filter(c => c.categoria === 'Artefato').length, Math.round(artAlvo * 0.35));
@@ -4589,8 +4643,10 @@ function montarListaSoEstoque(dados, chaves, orcamento, excluir) {
     pegar(spells.filter(c => c.categoria === 'Feitiço'), cont.sorcery || 6, 'Feitiço', 'spell');
     pegar(spells.filter(c => c.categoria === 'Encantamento'), cont.enchantment || 8, 'Encantamento', 'spell');
     pegar(spells.filter(c => c.categoria === 'Planeswalker'), cont.planeswalker || 1, 'Planeswalker', 'spell');
-    const nonbasicAlvo = Math.min(cont.nonbasic || Math.round(landAlvo * 0.45), landAlvo);
-    pegar(lands, nonbasicAlvo, 'Terreno', 'land');
+    ordenarInclusao(lands).forEach(c => {
+      if (cartas99() >= 99 || landsNoDeck() >= landAlvo) return;
+      incluir(c, 'Terreno');
+    });
     let giro = 0;
     let travou = 0;
     while (landsNoDeck() < landAlvo && cartas99() < 99 && basicos.length && travou < 90) {
@@ -4611,6 +4667,11 @@ function montarListaSoEstoque(dados, chaves, orcamento, excluir) {
     spells.sort((a, b) => a.pvs - b.pvs || (b.inclusao || 0) - (a.inclusao || 0));
     lands.sort((a, b) => a.pvs - b.pvs || (b.inclusao || 0) - (a.inclusao || 0));
     function landMaisBarato() {
+      const piso = (orcamento == null || !isFinite(orcamento)) ? 0 : orcamento * 0.2;
+      if (piso > 0 && gastoNaoBasico() < piso - 0.001) {
+        const preferido = ordenarInclusao(lands).find(c => cabeNonbasicAgora(c.pvs));
+        if (preferido) return { tipo: 'card', c: preferido };
+      }
       const c = lands[0];
       const b = basicos.filter(x => x.sobra > 0).sort((x, y) => x.pvs - y.pvs)[0];
       if (!c && !b) return null;
@@ -4628,26 +4689,56 @@ function montarListaSoEstoque(dados, chaves, orcamento, excluir) {
       if (querLand && porLand(landMaisBarato())) continue;
       const c = spells[0];
       if (c && incluir(c, c.categoria || 'Complemento')) continue;
-      if (porLand(landMaisBarato())) continue;
+      if (landsNoDeck() < landAlvo && porLand(landMaisBarato())) continue;
       break;
     }
   }
 
-  ordenarInclusao(spells).forEach(c => { if (cartas99() < 99 && cabeBruto(c.pvs)) incluir(c, c.categoria || 'Complemento'); });
-  ordenarInclusao(lands).forEach(c => { if (cartas99() < 99 && cabeBruto(c.pvs)) incluir(c, 'Terreno'); });
+  ordenarInclusao(spells).forEach(c => { if (cartas99() < 99 && cabeBruto(c.pvs, 'spell')) incluir(c, c.categoria || 'Complemento'); });
+  ordenarInclusao(lands).forEach(c => { if (cartas99() < 99 && landsNoDeck() < landAlvo && cabeBruto(c.pvs, 'land')) incluir(c, 'Terreno'); });
   let giroFim = 0;
-  while (cartas99() < 99 && giroFim < 60) {
+  while (landsNoDeck() < landAlvo && cartas99() < 99 && giroFim < 60) {
     const b = basicos[giroFim % Math.max(1, basicos.length)];
     giroFim++;
     if (!b || !incluirBasico(b)) break;
   }
+  let guardMin = 0;
+  while (landsNoDeck() < landAlvo && guardMin < 45) {
+    guardMin++;
+    const antes = landsNoDeck();
+    if (cartas99() < 99) {
+      const c = ordenarInclusao(lands).find(x => cabeNonbasicAgora(x.pvs));
+      if (c && (orcamento == null || gastoNaoBasico() < orcamento * 0.2)) incluir(c, 'Terreno');
+      if (landsNoDeck() === antes) {
+        const b = basicos.filter(x => x.sobra > 0).sort((a, b) => a.pvs - b.pvs)[0];
+        if (b) incluirBasico(b);
+      }
+      if (landsNoDeck() > antes) continue;
+    }
+    let idx = -1;
+    let pior = Infinity;
+    itens.forEach((it, i) => {
+      if (it.categoria === 'Comandante' || it.forcar || ehTerrenoItem(it)) return;
+      const score = it.inclusao == null ? -1 : it.inclusao;
+      if (score < pior) { pior = score; idx = i; }
+    });
+    if (idx < 0) break;
+    const it = itens[idx];
+    if (it.pvs) gasto -= it.pvs;
+    usado.delete(normNome(it.nome));
+    itens.splice(idx, 1);
+  }
 
-  gasto = Math.round(gasto * 100) / 100;
+  gasto = Math.round(Math.max(0, gasto) * 100) / 100;
   const total = itens.reduce((s, it) => s + it.qtd, 0);
   let aviso = '';
   if (cartas99() < 99) {
     aviso = 'Fechei ' + total + ' cartas dentro do orçamento. Não há mais cartas deste comandante no estoque que caibam no que sobrou.';
   }
+  if (orcamento != null && isFinite(orcamento) && gastoNaoBasico() + 0.05 < orcamento * 0.2) {
+    notas.push('Não havia terrenos não básicos suficientes no estoque para usar 20% do orçamento sem passar de 35 terrenos ou estourar o valor.');
+  }
+  if (landsNoDeck() < landAlvo) notas.push('Não foi possível chegar a ' + landAlvo + ' terrenos com o que há no estoque.');
   return { itens, gasto, soEstoque: true, notas, aviso };
 }
 
@@ -4660,9 +4751,34 @@ function montarListaDeck(dados, chaves, orcamento, priorizar, excluir) {
   let gasto = 0;
   excluir = excluir || new Set();
 
-  function cabe(valor, forcar) {
+  function gastoNaoBasico() {
+    return itens.reduce((s, it) => {
+      if (it.categoria !== 'Terreno' || !it.noEstoque || it.foraOrcamento) return s;
+      return s + (parseFloat(it.pvs) || 0) * (it.qtdNoEstoque || 0);
+    }, 0);
+  }
+
+  function reservaParaNaoBasicos() {
+    if (orcamento == null || !isFinite(orcamento)) return 0;
+    const falta = Math.max(0, orcamento * 0.2 - gastoNaoBasico());
+    if (falta <= 0.001) return 0;
+    let disp = 0;
+    const listas = [].concat(porTag.utilitylands || [], porTag.lands || []);
+    for (const c of listas) {
+      if (NOMES_BASICOS.has(normNome(c.nome))) continue;
+      const info = infoEstoqueDeck(c.nome);
+      if (!info || info.qtd < 1) continue;
+      if (usado.has(normNome(info.nome))) continue;
+      disp += info.pvs || 0;
+      if (disp >= falta) return falta;
+    }
+    return disp;
+  }
+
+  function cabe(valor, forcar, ehNonbasic) {
     if (forcar || orcamento == null || !isFinite(orcamento)) return true;
-    return gasto + valor <= orcamento + 0.001;
+    const reserva = ehNonbasic ? 0 : reservaParaNaoBasicos();
+    return gasto + valor + reserva <= orcamento + 0.001;
   }
 
   function acharMeta(nome) {
@@ -4721,7 +4837,7 @@ function montarListaDeck(dados, chaves, orcamento, priorizar, excluir) {
       return false;
     }
     const precoLinha = info ? info.pvs * qtd : 0;
-    const conta = !(info && !cabe(precoLinha, forcar));
+    const conta = !(info && !cabe(precoLinha, forcar, categoria === 'Terreno'));
     if (info && conta) gasto += precoLinha;
     usado.add(chave);
     itens.push({
@@ -4787,18 +4903,31 @@ function montarListaDeck(dados, chaves, orcamento, priorizar, excluir) {
   preencher(porTag.enchantments || [], cont.enchantment || 0, 'Encantamento');
   preencher(porTag.planeswalkers || [], cont.planeswalker || 0, 'Planeswalker');
 
+  const landAlvo = Math.max(35, cont.land || 37);
   const terrenos = []
     .concat(porTag.utilitylands || [], porTag.lands || [])
     .filter(c => !NOMES_BASICOS.has(normNome(c.nome)));
-  preencher(terrenos, cont.nonbasic || 0, 'Terreno');
+  const piso = (orcamento == null || !isFinite(orcamento)) ? 0 : orcamento * 0.2;
+  const alvoNB = Math.max(cont.nonbasic || 0, Math.round(landAlvo * 0.35));
+  function qtdTerrenos() {
+    return qtdOnde(it => it.categoria === 'Terreno' || it.categoria === 'Terreno básico' || NOMES_BASICOS.has(normNome(it.nome)));
+  }
+  for (const c of ordenar(terrenos)) {
+    if (qtdTerrenos() >= landAlvo) break;
+    const nb = qtdOnde(it => it.categoria === 'Terreno');
+    const info = infoEstoqueDeck(c.nome);
+    const cabeAgora = !info || cabe(info.pvs, false, true);
+    const faltaPiso = piso > 0 && gastoNaoBasico() < piso - 0.001;
+    if (!faltaPiso && nb >= alvoNB) break;
+    if (faltaPiso && nb >= alvoNB && !cabeAgora) continue;
+    add(c.nome, 'Terreno', c, false, 1);
+  }
 
   const nomesBasicos = (dados.cores || []).map(c => BASICOS_COR[c]).filter(Boolean);
-  let basicosFaltam = Math.max(0, (cont.land || 0) - qtdOnde(it => it.categoria === 'Terreno' || it.categoria === 'Terreno básico' || NOMES_BASICOS.has(normNome(it.nome))));
-  let giro = 0;
-  while (basicosFaltam > 0 && nomesBasicos.length && giro < 80) {
-    if (!add(nomesBasicos[giro % nomesBasicos.length], 'Terreno básico', null, false, 1)) break;
-    basicosFaltam--;
-    giro++;
+  let guardB = 0;
+  while (qtdTerrenos() < landAlvo && nomesBasicos.length && guardB < 90) {
+    if (!add(nomesBasicos[guardB % nomesBasicos.length], 'Terreno básico', null, false, 1)) break;
+    guardB++;
   }
 
   const pool = [];
@@ -4817,8 +4946,11 @@ function montarListaDeck(dados, chaves, orcamento, priorizar, excluir) {
   while (cartas99() > 99) {
     let idx = -1;
     let pior = Infinity;
+    const terras = itens.reduce((s, it) => s + ((it.categoria === 'Terreno' || it.categoria === 'Terreno básico' || NOMES_BASICOS.has(normNome(it.nome))) ? it.qtd : 0), 0);
     itens.forEach((it, i) => {
       if (it.categoria === 'Comandante' || it.forcar) return;
+      const ehTerra = it.categoria === 'Terreno' || it.categoria === 'Terreno básico' || NOMES_BASICOS.has(normNome(it.nome));
+      if (ehTerra && terras <= 35) return;
       const score = (it.categoria === 'Complemento' ? -1 : 0) + (it.inclusao == null ? 0 : it.inclusao);
       if (score < pior) { pior = score; idx = i; }
     });
