@@ -108,7 +108,7 @@
   <img src="logo.png" alt="Cozinha Offline Store">
   <div>
     <h1>Cozinha Offline Store</h1>
-    <p>Gestão de estoque, pedidos e orçamentos · versão 20/11</p>
+    <p>Gestão de estoque, pedidos e orçamentos · versão 21/11</p>
   </div>
 </header>
 <nav>
@@ -406,10 +406,10 @@
       <h2>Financeiro</h2>
       <p class="muted">Lucro = faturamento − custo − fretes. Descontos ficam discriminados e não entram nessa conta. Saídas canceladas aparecem na lista, mas ficam fora dos totais.</p>
       <div class="filters">
-        <div><label>De</label><input type="date" id="finDe"></div>
-        <div><label>Até</label><input type="date" id="finAte"></div>
+        <div><label>De</label><input type="date" id="finDe" onchange="renderFinanceiro()"></div>
+        <div><label>Até</label><input type="date" id="finAte" onchange="renderFinanceiro()"></div>
         <div><label>Agrupar</label>
-          <select id="finGrupo">
+          <select id="finGrupo" onchange="renderFinanceiro()">
             <option value="dia">Diário</option>
             <option value="semana">Semanal</option>
             <option value="mes" selected>Mensal</option>
@@ -2738,7 +2738,7 @@ function limparPedido(p) {
     tagReserva: p.tagReserva || '',
     cancelada: !!p.cancelada,
     canceladaEm: p.canceladaEm || '',
-    quando: p.quando || new Date().toISOString(),
+    quando: p.quando || (dataRegistro(p.data) ? isoDe(p.data) : new Date().toISOString()),
     itens: (p.itens || []).map(i => ({
       qtd: i.qtd, nome: i.nome, nomePt: i.nomePt || '', set: i.set || '', setCode: i.setCode || '',
       lang: i.lang, cond: i.cond, extras: i.extras || '', preco: i.preco, total: i.total,
@@ -3849,8 +3849,21 @@ function chavePeriodo(d, grupo) {
   return String(y);
 }
 
+function inicioFiltroData(v) {
+  const s = String(v || '').trim();
+  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return new Date(+iso[1], +iso[2] - 1, +iso[3]);
+  const br = s.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+  if (br) return new Date(+br[3], +br[2] - 1, +br[1]);
+  return null;
+}
+
+function dataSaidaPedido(p) {
+  return dataRegistro(p.quando || p.data);
+}
+
 function dentroDoPeriodo(d, ini, fim) {
-  if (!d) return false;
+  if (!d || isNaN(d.getTime())) return !ini && !fim;
   const t = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
   if (ini && t < ini.getTime()) return false;
   if (fim && t > fim.getTime()) return false;
@@ -3925,8 +3938,8 @@ function calcularFinanceiro() {
   const cod = (document.getElementById('finCodigo')?.value || '').trim().toUpperCase();
   const di = document.getElementById('finDe')?.value;
   const df = document.getElementById('finAte')?.value;
-  const ini = di ? new Date(di + 'T00:00:00') : null;
-  const fim = df ? new Date(df + 'T00:00:00') : null;
+  const ini = inicioFiltroData(di);
+  const fim = inicioFiltroData(df);
   if (cod && !codigosConhecidos().has(cod)) return { erro: 'Esse código de entrada ainda não existe. Escolha um da lista.' };
   if (cod && idp && !cod.startsWith(idp)) return { erro: 'Esse código não pertence ao IDP escolhido.' };
   const periodos = {};
@@ -3934,7 +3947,7 @@ function calcularFinanceiro() {
   const entradas = [];
   let faturamento = 0, custo = 0, lucro = 0, cancelado = 0, cartas = 0, semCusto = 0, fretes = 0, descontos = 0, nFretes = 0, nDescontos = 0;
   pedidosHistorico.forEach(p => {
-    const d = dataRegistro(p.quando || p.atualizado || p.data);
+    const d = dataSaidaPedido(p);
     if (!dentroDoPeriodo(d, ini, fim)) return;
     (p.itens || []).forEach(it => {
       if (!it.encontrado) return;
@@ -3944,7 +3957,7 @@ function calcularFinanceiro() {
       const cu = custoUnitarioSaida(it);
       const fat = qtd * preco;
       const cus = qtd * cu;
-      const row = { data: d, saida: p.codigo || '', cliente: p.cliente || '', titulo: p.titulo || '', codigo: it.codigoEntrada || '', nome: it.nome || '', qtd, preco, custo: cu, total: fat, lucro: fat - cus, status: p.cancelada ? 'Cancelada' : 'Ativa' };
+      const row = { data: d, saida: p.codigo || '', cliente: p.cliente || '', titulo: p.titulo || '', codigo: it.codigoEntrada || '', nome: it.nome || '', qtd, preco, custo: cu, llp: parseFloat(it.ml) || 0, total: fat, lucro: fat - cus, status: p.cancelada ? 'Cancelada' : 'Ativa' };
       saidas.push(row);
       if (p.cancelada) { cancelado += fat; return; }
       if (!(cu > 0)) semCusto += qtd;
@@ -3968,7 +3981,7 @@ function calcularFinanceiro() {
   });
   pedidosHistorico.forEach(p => {
     if (p.cancelada) return;
-    const d = dataRegistro(p.quando || p.atualizado || p.data);
+    const d = dataSaidaPedido(p);
     if (!dentroDoPeriodo(d, ini, fim)) return;
     const itens = (p.itens || []).filter(it => it.encontrado);
     const base = itens.reduce((s, it) => s + (parseFloat(it.qtd) || 0) * (parseFloat(it.preco) || 0), 0);
@@ -4015,11 +4028,19 @@ function calcularFinanceiro() {
 let finSortS = { key: 'data', dir: -1 };
 let finSortE = { key: 'data', dir: -1 };
 
+function dataCombina(d, q) {
+  if (!d || !q) return !q;
+  const iso = ymdLocal(d);
+  const br = String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0') + '/' + d.getFullYear();
+  const n = String(q).trim().toLowerCase();
+  return iso.toLowerCase().includes(n) || br.includes(n);
+}
+
 function finTexto(row, key) {
   if (key === 'data') return row.data ? ymdLocal(row.data) : '';
   if (key === 'nome') return row.nome || '';
   if (key === 'qtd') return String(row.qtd ?? '');
-  if (key === 'preco' || key === 'custo' || key === 'total') return (parseFloat(row[key]) || 0).toFixed(2).replace('.', ',');
+  if (key === 'preco' || key === 'custo' || key === 'total' || key === 'llp') return (parseFloat(row[key]) || 0).toFixed(2).replace('.', ',');
   return String(row[key] || '');
 }
 
@@ -4028,12 +4049,13 @@ function finPassa(row, prefix) {
   return map.every(([key, id]) => {
     const q = (document.getElementById(prefix + id)?.value || '').trim().toLowerCase();
     if (!q) return true;
+    if (key === 'data') return dataCombina(row.data, q);
     return finTexto(row, key).toLowerCase().includes(q);
   });
 }
 
 function ordenarListaFin(lista, st) {
-  const num = ['qtd', 'preco', 'custo', 'total'];
+  const num = ['qtd', 'preco', 'custo', 'total', 'llp'];
   return lista.slice().sort((a, b) => {
     if (st.key === 'data') return ((a.data && a.data.getTime ? a.data.getTime() : 0) - (b.data && b.data.getTime ? b.data.getTime() : 0)) * st.dir;
     if (num.includes(st.key)) return ((parseFloat(a[st.key]) || 0) - (parseFloat(b[st.key]) || 0)) * st.dir;
@@ -4055,7 +4077,7 @@ function ordenarFinTabela(qual, key) {
   if (st.key === key) st.dir *= -1;
   else {
     st.key = key;
-    st.dir = (key === 'data' || key === 'qtd' || key === 'preco' || key === 'custo' || key === 'total') ? -1 : 1;
+    st.dir = (key === 'data' || key === 'qtd' || key === 'preco' || key === 'custo' || key === 'total' || key === 'llp') ? -1 : 1;
   }
   renderFinanceiro();
 }
@@ -4102,7 +4124,13 @@ function renderFinanceiro() {
   }
   const t = dados.totais;
   const vis = listasFinanceiroVisiveis(dados);
-  box.innerHTML = `<div class="stat"><div class="muted">Faturamento</div><strong>${formatMoney(t.faturamento)}</strong></div>
+  const grupo = document.getElementById('finGrupo')?.value || 'mes';
+  const di = document.getElementById('finDe')?.value || '';
+  const df = document.getElementById('finAte')?.value || '';
+  const faixa = (di || df) ? `${di ? di.split('-').reverse().join('/') : 'início'} até ${df ? df.split('-').reverse().join('/') : 'hoje'}` : 'todo o histórico';
+  const nomesGrupo = { dia: 'dia', semana: 'semana', mes: 'mês', trimestre: 'trimestre', semestre: 'semestre', ano: 'ano' };
+  box.innerHTML = `<p class="muted">Mostrando ${esc(faixa)}, agrupado por ${esc(nomesGrupo[grupo] || grupo)}.</p>
+    <div class="stat"><div class="muted">Faturamento</div><strong>${formatMoney(t.faturamento)}</strong></div>
     <div class="stat"><div class="muted">Custo das vendas</div><strong>${formatMoney(t.custo)}</strong></div>
     <div class="stat"><div class="muted">Fretes (${t.nFretes})</div><strong>${formatMoney(t.fretes)}</strong></div>
     <div class="stat"><div class="muted">Descontos (${t.nDescontos})</div><strong>${formatMoney(t.descontos)}</strong></div>
@@ -4113,11 +4141,12 @@ function renderFinanceiro() {
   document.getElementById('finPeriodos').innerHTML = `<table><thead><tr><th>Período</th><th>Faturamento</th><th>Custo</th><th>Fretes</th><th>Descontos</th><th>Lucro</th><th>Cartas</th></tr></thead><tbody>`
     + (dados.periodos.map(p => `<tr><td>${esc(p.periodo)}</td><td>${formatMoney(p.faturamento)}</td><td>${formatMoney(p.custo)}</td><td>${formatMoney(p.frete || 0)}</td><td>${formatMoney(p.desconto || 0)}</td><td>${formatMoney(p.lucro)}</td><td>${p.cartas}</td></tr>`).join('') || '<tr><td colspan="7">Nenhuma venda nesse filtro.</td></tr>')
     + '</tbody></table>';
-  const colsS = [['data','Data'],['saida','Saída'],['cliente','Cliente'],['codigo','Código'],['nome','Carta'],['qtd','Qtd'],['preco','Preço'],['custo','Custo'],['total','Total'],['status','Status']];
-  const headS = colsS.map(([k, label]) => thFin('s', k, label)).join('');
+  const colsSaida = [['data','Data'],['saida','Cod. saída'],['cliente','Cliente'],['codigo','Cód. entrada'],['nome','Carta'],['qtd','Qtd'],['llp','LLP'],['custo','Custo'],['preco','Preço'],['total','Total'],['status','Status']];
+  const headS = colsSaida.map(([k, label]) => thFin('s', k, label)).join('');
   document.getElementById('finSaidas').innerHTML = `<table><thead><tr>${headS}</tr></thead><tbody>`
-    + (vis.saidas.map(s => `<tr><td>${esc(finTexto(s,'data'))}</td><td>${esc(s.saida)}</td><td>${esc(s.cliente)}</td><td>${esc(s.codigo || '-')}</td><td>${esc(s.nome)}</td><td>${s.qtd}</td><td>${formatMoney(s.preco)}</td><td>${formatMoney(s.custo)}</td><td>${formatMoney(s.total)}</td><td>${esc(s.status)}</td></tr>`).join('') || '<tr><td colspan="10">Nenhuma saída nesse filtro.</td></tr>')
+    + (vis.saidas.map(s => `<tr><td>${esc(finTexto(s,'data'))}</td><td>${esc(s.saida)}</td><td>${esc(s.cliente)}</td><td>${esc(s.codigo || '-')}</td><td>${esc(s.nome)}</td><td>${s.qtd}</td><td>${formatMoney(s.llp)}</td><td>${formatMoney(s.custo)}</td><td>${formatMoney(s.preco)}</td><td>${formatMoney(s.total)}</td><td>${esc(s.status)}</td></tr>`).join('') || '<tr><td colspan="11">Nenhuma saída nesse filtro.</td></tr>')
     + '</tbody></table>';
+  const colsS = [['data','Data'],['saida','Saída'],['cliente','Cliente'],['codigo','Código'],['nome','Carta'],['qtd','Qtd'],['preco','Preço'],['custo','Custo'],['total','Total'],['status','Status']];
   const headE = colsS.map(([k, label]) => thFin('e', k, label)).join('') + thFin('e', 'pasta', 'Pasta');
   document.getElementById('finEntradas').innerHTML = `<table><thead><tr>${headE}</tr></thead><tbody>`
     + (vis.entradas.map(e => `<tr><td>${esc(finTexto(e,'data'))}</td><td>${esc(e.saida || '-')}</td><td>${esc(e.cliente || '-')}</td><td>${esc(e.codigo || '-')}</td><td>${esc(e.nome)}</td><td>${e.qtd}</td><td>${formatMoney(e.preco)}</td><td>${formatMoney(e.custo)}</td><td>${formatMoney(e.total)}</td><td>${esc(e.status)}</td><td>${esc(e.pasta || '-')}</td></tr>`).join('') || '<tr><td colspan="11">Nenhuma entrada nesse filtro.</td></tr>')
@@ -4140,8 +4169,10 @@ function exportarFinanceiro(tipo) {
   resumo.push(['Quantidade de fretes', t.nFretes]);
   resumo.push(['Quantidade de descontos', t.nDescontos]);
   resumo.push(['Canceladas (não contabilizadas)', t.cancelado]);
-  const saidas = [['Data', 'Saída', 'Cliente', 'Código', 'Carta', 'Qtd', 'Preço', 'Custo', 'Total', 'Lucro', 'Status']].concat(vis.saidas.map(s => [ymdLocal(s.data), s.saida, s.cliente, s.codigo, s.nome, s.qtd, s.preco, s.custo, s.total, s.lucro, s.status]));
-  const entradas = [['Data', 'Saída', 'Cliente', 'Código', 'Carta', 'Qtd', 'Preço', 'Custo', 'Total', 'Status', 'Pasta']].concat(vis.entradas.map(e => [ymdLocal(e.data), e.saida, e.cliente, e.codigo, e.nome, e.qtd, e.preco, e.custo, e.total, e.status, e.pasta]));
+  const statusFiltro = (document.getElementById('fsStatus')?.value || '').trim();
+  const cards = vis.saidas.filter(s => statusFiltro || s.status !== 'Cancelada');
+  const saidas = [['Data', 'Cod. Saída', 'Cliente', 'Cód. Entrada', 'Carta', 'Qtd', 'LLP', 'Custo', 'Preço', 'Total']].concat(cards.map(s => [s.data ? ymdLocal(s.data) : '', s.saida, s.cliente, s.codigo, s.nome, s.qtd, s.llp || 0, s.custo, s.preco, s.total]));
+  const entradas = [['Data', 'Saída', 'Cliente', 'Código', 'Carta', 'Qtd', 'Preço', 'Custo', 'Total', 'Status', 'Pasta']].concat(vis.entradas.map(e => [e.data ? ymdLocal(e.data) : '', e.saida, e.cliente, e.codigo, e.nome, e.qtd, e.preco, e.custo, e.total, e.status, e.pasta]));
   const nome = 'financeiro-' + ymdLocal(new Date());
   if (tipo === 'xlsx') baixarXlsx([{ nome: 'Resumo', linhas: resumo }, { nome: 'Saidas', linhas: saidas }, { nome: 'Entradas', linhas: entradas }], nome + '.xlsx');
   else baixarPdf('Financeiro Cozinha Offline', [{ titulo: 'Resumo', linhas: resumo }, { titulo: 'Saidas', linhas: saidas }, { titulo: 'Entradas', linhas: entradas }], nome + '.pdf');
