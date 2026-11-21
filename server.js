@@ -243,56 +243,92 @@ function slugComandante(nome) {
     .replace(/^-+|-+$/g, '');
 }
 
+async function obterEdh(url) {
+  const resp = await axios.get(url, {
+    timeout: 20000,
+    headers: { 'User-Agent': 'CozinhaOfflineStore/1.0', 'Accept': 'application/json' },
+    validateStatus: () => true
+  });
+  if (resp.status !== 200 || !resp.data || !resp.data.container) return null;
+  return resp.data;
+}
+
+async function acharParEdh(slugA, slugB) {
+  const raw = await obterEdh(`https://json.edhrec.com/pages/partners/${encodeURIComponent(slugA)}.json`);
+  const listas = raw?.container?.json_dict?.cardlists || [];
+  for (const cl of listas) {
+    for (const c of cl.cardviews || []) {
+      if (c.slug === slugB || c.sanitized === slugB) {
+        return String(c.url || '').replace(/^\/commanders\//, '').replace(/\/$/, '');
+      }
+    }
+  }
+  return '';
+}
+
+function dadosEdh(raw, slug, nome, comandantes, tema) {
+  const card = raw.container.json_dict?.card || {};
+  const listas = (raw.container.json_dict?.cardlists || []).map(cl => ({
+    tag: cl.tag || '',
+    header: cl.header || '',
+    cartas: (cl.cardviews || []).map(c => ({
+      nome: c.name,
+      sinergia: c.synergy || 0,
+      decks: c.num_decks || 0,
+      total: c.potential_decks || 0
+    }))
+  }));
+  return {
+    nome,
+    comandantes,
+    slug,
+    url: `https://edhrec.com/commanders/${slug}${tema ? '/budget' : ''}`,
+    decks: card.num_decks || 0,
+    salt: card.salt || 0,
+    cores: card.color_identity || [],
+    cmc: card.cmc,
+    contagens: {
+      creature: raw.creature || 0,
+      instant: raw.instant || 0,
+      sorcery: raw.sorcery || 0,
+      artifact: raw.artifact || 0,
+      enchantment: raw.enchantment || 0,
+      planeswalker: raw.planeswalker || 0,
+      land: raw.land || 0,
+      basic: raw.basic || 0,
+      nonbasic: raw.nonbasic || 0
+    },
+    listas
+  };
+}
+
 app.get('/api/edhrec', async (req, res) => {
   const nome = String(req.query.comandante || '').trim();
+  const parceiro = String(req.query.parceiro || '').trim();
+  const tema = req.query.tema === 'budget' ? 'budget' : '';
   if (!nome) return res.status(400).json({ error: 'Informe o comandante.' });
-  const slug = slugComandante(nome);
-  const hit = edhCache.get(slug);
+  const slugA = slugComandante(nome);
+  const slugB = parceiro ? slugComandante(parceiro) : '';
+  const cacheKey = `${slugA}|${slugB}|${tema}`;
+  const hit = edhCache.get(cacheKey);
   if (hit && Date.now() - hit.em < EDH_TTL) return res.json(hit.dados);
   try {
-    const url = `https://json.edhrec.com/pages/commanders/${encodeURIComponent(slug)}.json`;
-    const resp = await axios.get(url, {
-      timeout: 20000,
-      headers: { 'User-Agent': 'CozinhaOfflineStore/1.0', 'Accept': 'application/json' },
-      validateStatus: () => true
-    });
-    if (resp.status !== 200 || !resp.data || !resp.data.container) {
-      return res.status(404).json({ error: 'Comandante não encontrado no EDHREC. Use o nome em inglês, como no Scryfall.' });
+    let slug = slugA;
+    let comandantes = [nome];
+    if (slugB) {
+      if (slugB === slugA) return res.status(400).json({ error: 'O parceiro precisa ser outro comandante.' });
+      slug = await acharParEdh(slugA, slugB) || await acharParEdh(slugB, slugA);
+      if (!slug) return res.status(404).json({ error: 'Não encontrei essa dupla de parceiros no EDHREC. Use os nomes em inglês.' });
+      comandantes = [nome, parceiro];
     }
-    const raw = resp.data;
-    const card = raw.container.json_dict?.card || {};
-    const listas = (raw.container.json_dict?.cardlists || []).map(cl => ({
-      tag: cl.tag || '',
-      header: cl.header || '',
-      cartas: (cl.cardviews || []).map(c => ({
-        nome: c.name,
-        sinergia: c.synergy || 0,
-        decks: c.num_decks || 0,
-        total: c.potential_decks || 0
-      }))
-    }));
-    const dados = {
-      nome: card.name || String(raw.header || nome).replace(/\s*\(Commander\)\s*$/i, ''),
-      slug,
-      url: `https://edhrec.com/commanders/${slug}`,
-      decks: card.num_decks || 0,
-      salt: card.salt || 0,
-      cores: card.color_identity || [],
-      cmc: card.cmc,
-      contagens: {
-        creature: raw.creature || 0,
-        instant: raw.instant || 0,
-        sorcery: raw.sorcery || 0,
-        artifact: raw.artifact || 0,
-        enchantment: raw.enchantment || 0,
-        planeswalker: raw.planeswalker || 0,
-        land: raw.land || 0,
-        basic: raw.basic || 0,
-        nonbasic: raw.nonbasic || 0
-      },
-      listas
-    };
-    edhCache.set(slug, { em: Date.now(), dados });
+    const path = tema ? `commanders/${slug}/budget` : `commanders/${slug}`;
+    const raw = await obterEdh(`https://json.edhrec.com/pages/${path}.json`);
+    if (!raw) return res.status(404).json({ error: 'Comandante não encontrado no EDHREC. Use o nome em inglês, como no Scryfall.' });
+    const cardName = raw.container.json_dict?.card?.name;
+    const titulo = slugB ? (cardName || `${nome} + ${parceiro}`) : (cardName || nome);
+    if (!slugB && cardName) comandantes = [cardName];
+    const dados = dadosEdh(raw, slug, titulo, comandantes, tema);
+    edhCache.set(cacheKey, { em: Date.now(), dados });
     res.json(dados);
   } catch (err) {
     res.status(502).json({ error: 'Não consegui consultar o EDHREC agora. Tente de novo em instantes.' });
