@@ -72,6 +72,7 @@ function permitido(papel, method, path) {
 app.use(async (req, res, next) => {
   if (!req.path.startsWith('/api/')) return next();
   if (req.path === '/api/login' || req.path === '/api/status') return next();
+  if (req.path === '/api/publico/vitrine' || req.path.startsWith('/api/publico/vitrine/')) return next();
   try {
     const usuario = await usuarioDaReq(req);
     if (!usuario) return res.status(401).json({ error: 'Faça login.' });
@@ -193,7 +194,6 @@ async function garantirAdmin() {
 
 db.ready.then(garantirAdmin).catch(err => console.error('Erro ao preparar contas:', err));
 
-// Listar estoque
 app.get('/api/estoque', async (req, res) => {
   try {
     const { rows } = await db.query('SELECT * FROM cartas ORDER BY nome');
@@ -262,8 +262,6 @@ async function inserirEmLote(client, cartas) {
   }
 }
 
-// Substituir estoque completo. Tudo acontece numa transação:
-// se a gravação falhar no meio, o estoque antigo continua inteiro.
 app.post('/api/estoque/substituir', async (req, res) => {
   const cartas = req.body;
   if (!Array.isArray(cartas)) return res.status(400).json({ error: 'Envie um array de cartas' });
@@ -295,7 +293,6 @@ app.post('/api/estoque/substituir', async (req, res) => {
   }
 });
 
-// Importar / adicionar ao estoque (sem apagar o existente)
 app.post('/api/estoque/importar', async (req, res) => {
   const cartas = req.body;
   if (!Array.isArray(cartas)) return res.status(400).json({ error: 'Envie um array de cartas' });
@@ -315,7 +312,6 @@ app.post('/api/estoque/importar', async (req, res) => {
   }
 });
 
-// Atualizar uma carta
 app.put('/api/estoque/:id', async (req, res) => {
   const { id } = req.params;
   const campos = req.body;
@@ -335,7 +331,6 @@ app.put('/api/estoque/:id', async (req, res) => {
   }
 });
 
-// Atualizar ML de todas as cartas
 app.post('/api/atualizar-ml', async (req, res) => {
   try {
     const { rows } = await db.query('SELECT id, nome FROM cartas');
@@ -354,7 +349,6 @@ app.post('/api/atualizar-ml', async (req, res) => {
   }
 });
 
-// Teste de conexão com o banco
 app.get('/api/status', async (req, res) => {
   const versao = 'pg-v5';
   if (!process.env.DATABASE_URL) {
@@ -521,6 +515,60 @@ app.get('/api/edhrec', async (req, res) => {
   } catch (err) {
     res.status(502).json({ error: 'Não consegui consultar o EDHREC agora. Tente de novo em instantes.' });
   }
+});
+
+function deckParaVitrine(d) {
+  const itens = (Array.isArray(d.itens) ? d.itens : []).map(it => ({
+    qtd: Math.max(1, parseInt(it.qtd, 10) || 1),
+    nome: it.nome || '',
+    nomePt: it.nomePt || '',
+    set: it.set || '',
+    setCode: it.setCode || '',
+    cond: it.cond || '',
+    extras: it.extras || '',
+    scryfallId: it.scryfallId || '',
+    preco: it.pvs == null || it.pvs === '' ? null : Number(it.pvs),
+    funcao: it.funcao || it.categoria || 'Outras'
+  })).filter(it => it.nome);
+  const total = Math.round(itens.reduce((s, it) => s + (Number(it.preco) || 0) * it.qtd, 0) * 100) / 100;
+  return {
+    id: d.id,
+    nome: (d.meta && d.meta.nome) || d.nome || 'Deck',
+    atualizado: d.atualizado || '',
+    total,
+    itens
+  };
+}
+
+async function decksDaVitrine() {
+  const { rows } = await db.query('SELECT valor FROM config WHERE chave = $1', ['decks']);
+  if (!rows.length || !rows[0].valor) return [];
+  const lista = JSON.parse(rows[0].valor);
+  if (!Array.isArray(lista)) return [];
+  return lista.filter(d => d && d.vitrine && d.id).map(deckParaVitrine);
+}
+
+app.get('/api/publico/vitrine', async (req, res) => {
+  try {
+    res.json(await decksDaVitrine());
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/publico/vitrine/:id', async (req, res) => {
+  try {
+    const lista = await decksDaVitrine();
+    const deck = lista.find(d => d.id === req.params.id);
+    if (!deck) return res.status(404).json({ error: 'Este deck não está na vitrine.' });
+    res.json(deck);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/d/:id', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 app.listen(PORT, () => {
