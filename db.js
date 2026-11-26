@@ -38,11 +38,27 @@ async function init() {
   await pool.query(`ALTER TABLE cartas ADD COLUMN IF NOT EXISTS pvs_manual INTEGER DEFAULT 0`);
   await pool.query(`CREATE TABLE IF NOT EXISTS classe_a (nome TEXT PRIMARY KEY)`);
   await pool.query(`CREATE TABLE IF NOT EXISTS config (chave TEXT PRIMARY KEY, valor TEXT)`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS usuarios (
+    id SERIAL PRIMARY KEY,
+    login TEXT UNIQUE NOT NULL,
+    nome TEXT NOT NULL,
+    senha_hash TEXT NOT NULL,
+    papel TEXT NOT NULL,
+    ativo INTEGER DEFAULT 1,
+    criado_em TIMESTAMP DEFAULT NOW()
+  )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS sessoes (
+    token TEXT PRIMARY KEY,
+    usuario_id INTEGER REFERENCES usuarios(id) ON DELETE CASCADE,
+    expira_em TIMESTAMP NOT NULL
+  )`);
 }
 
-init().catch(err => console.error('Erro ao criar tabela:', err));
+const ready = init();
+ready.catch(err => console.error('Erro ao criar tabela:', err));
 
 module.exports = {
   query: (text, params) => pool.query(text, params),
-  pool
+  pool,
+  ready
 };
