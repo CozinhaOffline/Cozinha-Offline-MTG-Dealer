@@ -108,13 +108,15 @@
   <img src="logo.png" alt="Cozinha Offline Store">
   <div>
     <h1>Cozinha Offline Store</h1>
-    <p>Gestão de estoque, pedidos e orçamentos · versão 21/11</p>
+    <p>Gestão de estoque, pedidos e orçamentos · versão 24/11</p>
   </div>
+  <div id="quemEsta" style="margin-left:auto;text-align:right;font-size:0.9rem;"></div>
 </header>
 <nav>
   <button class="active" data-tab="estoque">Estoque</button>
   <button data-tab="pedidos">Pedidos</button>
   <button data-tab="deckbuilder">Deckbuilder</button>
+  <button data-tab="vitrine">Vitrine</button>
   <button data-tab="financeiro">Financeiro</button>
   <button data-tab="custos">Custos e PVS</button>
   <button data-tab="orcamento">Orçamento</button>
@@ -123,10 +125,21 @@
   <button data-tab="config">Configurações</button>
 </nav>
 </div>
+<div id="telaLogin" style="position:fixed;inset:0;z-index:8000;background:#12161c;display:flex;align-items:center;justify-content:center;padding:1rem;">
+  <div class="card" style="width:min(420px,92vw);margin:0;">
+    <h2>Entrar</h2>
+    <label>Usuário</label>
+    <input id="loginUser" autocomplete="username" placeholder="admin">
+    <label>Senha</label>
+    <input id="loginSenha" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')entrar()">
+    <button class="primary" type="button" style="margin-top:0.8rem;" onclick="entrar()">Entrar</button>
+    <p id="loginErro" class="muted"></p>
+  </div>
+</div>
 <main>
   <div id="estoque" class="tab active">
     <aside id="estoqueResumo" class="estoque-resumo"></aside>
-    <div class="card">
+    <div class="card so-admin">
       <h2>Importar estoque</h2>
       <div class="row">
         <div class="col">
@@ -157,7 +170,7 @@
         <div><label>Código de entrada</label><input type="text" id="fCodigoBulk" list="listaCodigosEntrada" placeholder="Código completo" oninput="aplicarFiltrosDebounced()"></div>
         <div style="align-self:end;"><button class="secondary small" onclick="limparFiltros()">Limpar filtros</button></div>
       </div>
-      <div class="filters" style="margin-bottom:0.6rem;">
+      <div class="filters so-admin" style="margin-bottom:0.6rem;">
         <div><label>Campo</label>
           <select id="bulkField">
             <option value="desconto">Desconto</option>
@@ -185,7 +198,7 @@
         </div>
         <div style="align-self:end;"><button class="primary small" onclick="aplicarBulk()">Aplicar</button></div>
       </div>
-      <div class="filters" style="margin-bottom:0.6rem;">
+      <div class="filters so-admin" style="margin-bottom:0.6rem;">
         <div><label>IDP do código</label><select id="bulkIdp"><option value="">Selecione</option></select></div>
         <div><label>Restante do código</label><input type="text" id="bulkResto" placeholder="vazio = 0000"></div>
         <div style="align-self:end;"><button class="primary small" onclick="aplicarCodigoMassa()">Aplicar código</button></div>
@@ -217,19 +230,19 @@
         </div>
         <div style="align-self:end;"><button class="secondary small" onclick="aplicarFiltros()">Aplicar ordenação</button></div>
       </div>
-      <div class="filters" style="margin-top:0.6rem;">
+      <div class="filters so-admin" style="margin-top:0.6rem;">
         <div><label>Transferir selecionados para</label>
           <select id="transferPasta"><option value="">Escolha a pasta...</option></select>
         </div>
         <div style="align-self:end;"><button class="primary small" onclick="transferirSelecionados()">Transferir</button></div>
       </div>
-      <div class="filters" style="margin-top:0.6rem;">
+      <div class="filters so-admin" style="margin-top:0.6rem;">
         <div style="align-self:end;"><button class="secondary small" style="background:#c41e3a;" onclick="excluirSelecionados()">Excluir selecionados</button></div>
         <div style="align-self:end;"><button class="secondary small" style="background:#c41e3a;" onclick="excluirFiltrados()">Excluir o que está filtrado</button></div>
       </div>
     </div>
 
-    <div class="card">
+    <div class="card so-admin" id="cardManual">
       <h2>Adicionar item manualmente</h2>
       <div class="filters">
         <div><label>Nome EN *</label><input type="text" id="manNome" placeholder="Nome em inglês"></div>
@@ -249,13 +262,13 @@
       <button class="primary small" onclick="adicionarManual()">Adicionar ao estoque</button>
     </div>
 
-    <div class="card">
+    <div class="card" id="cardPastas">
       <h2>Pastas</h2>
-      <div class="filters">
+      <div class="filters so-admin">
         <div><label>Nova pasta</label><input type="text" id="novaPasta" placeholder="Nome da pasta"></div>
         <div style="align-self:end;"><button class="primary small" onclick="criarPasta()">Criar pasta</button></div>
       </div>
-      <div class="filters" style="margin-top:0.6rem;">
+      <div class="filters so-admin" style="margin-top:0.6rem;">
         <div><label>Calcular custo por</label>
           <select id="custoAlvoTipo" onchange="alternarAlvoCusto()">
             <option value="pasta">Pasta</option>
@@ -341,6 +354,7 @@
   <!-- Abas restantes (mantidas simplificadas) -->
   <div id="pedidos" class="tab">
     <div class="card">
+      <div class="so-admin">
       <h2>Novo pedido</h2>
       <div class="row">
         <div class="col"><label>Cliente</label><input type="text" id="pedCliente" placeholder="Nome do cliente"></div>
@@ -348,9 +362,10 @@
       </div>
       <label>Lista do cliente (uma carta por linha, opcionalmente com quantidade)</label>
       <textarea id="pedLista" placeholder="1 Sol Ring&#10;1 Arcane Signet&#10;Lightning Greaves"></textarea>
-      <button class="primary" onclick="cruzarPedido()">Cruzar com estoque e gerar orçamento</button>
+      <button class="primary so-admin" onclick="cruzarPedido()">Cruzar com estoque e gerar orçamento</button>
+      </div>
       <div id="pedResultado" style="display:none;margin-top:1rem;"></div>
-      <button class="primary" id="btnBaixa" style="display:none;" onclick="darBaixa()">Dar baixa e registrar saída</button>
+      <button class="primary so-admin" id="btnBaixa" style="display:none;" onclick="darBaixa()">Dar baixa e registrar saída</button>
     </div>
     <div class="card" id="listaOrcamentos">
       <h2>Orçamentos salvos</h2>
@@ -501,6 +516,12 @@
       </div>
     </div>
   </div>
+  <div id="vitrine" class="tab">
+    <div class="card">
+      <h2>Vitrine</h2>
+      <p>Esta aba ainda será montada. Aqui o cliente vai ver as cartas à venda, sem as pastas do estoque físico.</p>
+    </div>
+  </div>
   <div id="config" class="tab">
     <div class="card">
       <h2>Liquidez</h2>
@@ -556,6 +577,25 @@
       </div>
     </div>
     <div class="card">
+      <h2>Contas</h2>
+      <p class="muted">Administrador edita tudo. Sócio vê Estoque, Pedidos e Financeiro, sem alterar. Cliente vê Estoque sem pastas, a Vitrine e pode montar listas no Deckbuilder.</p>
+      <div id="listaUsuarios"></div>
+      <h3>Nova conta</h3>
+      <div class="filters">
+        <div><label>Nome</label><input type="text" id="novaContaNome" placeholder="Nome da pessoa"></div>
+        <div><label>Usuário</label><input type="text" id="novaContaLogin" placeholder="letras e números"></div>
+        <div><label>Senha</label><input type="password" id="novaContaSenha" placeholder="mínimo 4"></div>
+        <div><label>Perfil</label>
+          <select id="novaContaPapel">
+            <option value="socio">Sócio</option>
+            <option value="cliente">Cliente</option>
+            <option value="admin">Administrador</option>
+          </select>
+        </div>
+        <div style="align-self:end;"><button class="primary small" type="button" onclick="criarConta()">Criar conta</button></div>
+      </div>
+    </div>
+    <div class="card">
       <h2>Segurança</h2>
       <h3>Senha de administrador</h3>
       <p class="muted">Pedida para alterar preço e aplicar desconto num orçamento. A senha inicial é 123456.</p>
@@ -587,13 +627,61 @@
 
 <script>
 const jsPDF = (window.jspdf && window.jspdf.jsPDF) || null;
+let usuarioAtual = null;
+const ABAS_POR_PAPEL = {
+  admin: ['estoque','pedidos','deckbuilder','vitrine','financeiro','custos','orcamento','avaliador','ajuda','config'],
+  socio: ['estoque','pedidos','financeiro'],
+  cliente: ['estoque','vitrine','deckbuilder']
+};
+function podeEditar() { return !!(usuarioAtual && usuarioAtual.papel === 'admin'); }
+const fetchOriginal = window.fetch.bind(window);
+window.fetch = function(url, opts) {
+  opts = opts ? Object.assign({}, opts) : {};
+  const u = typeof url === 'string' ? url : '';
+  if (u.indexOf('/api/') === 0) {
+    const token = localStorage.getItem('sessaoToken');
+    const headers = Object.assign({}, opts.headers || {});
+    if (token) headers.Authorization = 'Bearer ' + token;
+    opts.headers = headers;
+  }
+  return fetchOriginal(url, opts);
+};
 let estoque = [];
+function avisarBanco(msg) {
+  let el = document.getElementById('avisoBanco');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'avisoBanco';
+    el.className = 'alert';
+    el.style.margin = '0.8rem 1rem 0';
+    const nav = document.querySelector('nav');
+    if (nav) nav.insertAdjacentElement('afterend', el);
+    else document.body.prepend(el);
+  }
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+
 async function carregarEstoqueServidor() {
   try {
     const r = await fetch('/api/estoque');
-    const rows = await r.json();
-    if (Array.isArray(rows) && rows.length) {
-      estoque = rows.map(c => ({
+    let rows = null;
+    try { rows = await r.json(); } catch (e) { rows = null; }
+    if (!r.ok || !Array.isArray(rows)) {
+      const detalhe = rows && rows.error ? rows.error : ('o servidor respondeu ' + r.status);
+      avisarBanco('O estoque não carregou porque o banco de dados não está acessível. As cartas não foram apagadas por esta tela. Detalhe: ' + detalhe);
+      return;
+    }
+    if (!rows.length) {
+      estoque = [];
+      filtered = [];
+      avisarBanco('O banco respondeu, mas não há nenhuma carta gravada nele.');
+      montarPastas();
+      renderPastas();
+      aplicarFiltros();
+      return;
+    }
+    estoque = rows.map(c => ({
         id: c.id,
         nome: c.nome,
         nomePt: c.nome_pt || '',
@@ -624,9 +712,8 @@ async function carregarEstoqueServidor() {
       montarPastas();
       renderPastas();
       aplicarFiltros();
-    }
   } catch (e) {
-    console.log('Sem conexão com servidor ou estoque vazio');
+    avisarBanco('Não consegui falar com o servidor. Se abriu o arquivo HTML no seu computador, use o endereço do Render. ' + (e.message || ''));
   }
 }
 
@@ -634,6 +721,7 @@ let filaSalvar = Promise.resolve();
 let pastasMeta = {};
 
 async function salvarEstoqueServidor(forcar) {
+  if (!podeEditar()) return;
   filaSalvar = filaSalvar.catch(() => {}).then(() => enviarEstoqueAtual(!!forcar));
   return filaSalvar;
 }
@@ -1365,7 +1453,7 @@ async function carregarListaClasseA() {
   if (!texto) texto = CLASSE_A_PADRAO;
   if (el) el.value = texto;
   recarregarClasseASet();
-  if (servidorVazio) {
+  if (servidorVazio && podeEditar()) {
     const linhas = texto.split(/\r?\n/).map(l => l.trim().replace(/^\d+\s+/, '')).filter(Boolean);
     fetch('/api/classe-a', {
       method: 'PUT',
@@ -1840,7 +1928,7 @@ function renderPastas() {
       ? `background-image:linear-gradient(rgba(18,22,28,0.75),rgba(18,22,28,0.75)),url('${img}');background-size:cover;background-position:center;`
       : 'background:#1b2330;';
     return `<div onclick="filtrarPorPasta(${i})" style="position:relative;display:inline-block;width:200px;margin:0.4rem;padding:1rem;border-radius:10px;cursor:pointer;${active}${bg}">
-      <button class="pasta-dots" title="Opções" onclick="event.stopPropagation();abrirMenuPasta(event, ${i})">⋯</button>
+      ${podeEditar() ? `<button class="pasta-dots" title="Opções" onclick="event.stopPropagation();abrirMenuPasta(event, ${i})">⋯</button>` : ''}
       <div style="font-weight:600;color:var(--azul);padding-right:1.2rem;">${esc(p)}</div>
       <div class="muted">${qtd} cartas</div>
       <div class="muted">LLP ${formatMoney(llp)}</div>
@@ -2337,9 +2425,15 @@ function atualizarResumo() {
   const el = document.getElementById('estoqueResumo');
   if (!el) return;
   const qtd = estoque.reduce((s, c) => s + (parseFloat(c.qtd) || 0), 0);
+  const pvs = estoque.reduce((s, c) => s + (parseFloat(c.pvs) || 0) * (parseFloat(c.qtd) || 0), 0);
+  if (usuarioAtual && usuarioAtual.papel === 'cliente') {
+    el.innerHTML = `<div style="font-weight:700;color:var(--azul);margin-bottom:0.35rem;">Estoque</div>
+      <div>Cartas: <strong>${qtd}</strong></div>
+      <div>PVS: <strong>${formatMoney(pvs)}</strong></div>`;
+    return;
+  }
   const llp = estoque.reduce((s, c) => s + (parseFloat(c.ml) || 0) * (parseFloat(c.qtd) || 0), 0);
   const custo = estoque.reduce((s, c) => s + (parseFloat(c.custo) || 0) * (parseFloat(c.qtd) || 0), 0);
-  const pvs = estoque.reduce((s, c) => s + (parseFloat(c.pvs) || 0) * (parseFloat(c.qtd) || 0), 0);
   const por = { A: 0, B: 0, C: 0, D: 0 };
   estoque.forEach(c => {
     const k = String(c.liquidez || 'C').toUpperCase();
@@ -2393,13 +2487,19 @@ function renderEstoque() {
   document.getElementById('estoqueEmpty').style.display = filtered.length ? 'none' : 'block';
   if (!filtered.length) document.getElementById('estoqueEmpty').textContent = 'Nenhum item com esses filtros.';
 
+  const cliente = usuarioAtual && usuarioAtual.papel === 'cliente';
+  const editar = podeEditar();
+  const simples = [['qtd','Qde.'],['nomePt','NOME PT'],['nome','NOME EN'],['set','EDIÇÃO'],['lang','Idioma'],['cond','Estado']];
+  if (!cliente) simples.push(['ml','LLP']);
+  simples.push(['pvs','PVS']);
+  const detalhe = [['codigo','Código'],['qtd','Qde.'],['nomePt','NOME PT'],['nome','NOME EN'],['set','EDIÇÃO'],['setCode','EDIÇÃO (sigla)'],['cor','COR'],['raridade','Raridade'],['cond','Estado'],['lang','Idioma'],['extras','EXTRAS'],['obs','OBS'],['operacao','Operação'],['data','Data'],['depara','De/Para'],['ml','LLP'],['desconto','Desconto'],['custo','Custo'],['pvs','PVS'],['liquidez','Liquidez']];
   const cols = viewMode === 'simple'
-    ? [['qtd','Qde.'],['nome','NOME EN'],['set','EDIÇÃO'],['lang','Idioma'],['cond','Estado'],['ml','LLP'],['pvs','PVS']]
-    : [['codigo','Código'],['qtd','Qde.'],['nomePt','NOME PT'],['nome','NOME EN'],['set','EDIÇÃO'],['setCode','EDIÇÃO (sigla)'],['cor','COR'],['raridade','Raridade'],['cond','Estado'],['lang','Idioma'],['extras','EXTRAS'],['obs','OBS'],['operacao','Operação'],['data','Data'],['depara','De/Para'],['ml','LLP'],['desconto','Desconto'],['custo','Custo'],['pvs','PVS'],['liquidez','Liquidez']];
+    ? simples
+    : (cliente ? detalhe.filter(c => !['codigo','obs','operacao','depara','ml','desconto','custo'].includes(c[0])) : detalhe);
 
-  thead.innerHTML = (viewMode === 'detail' ? '<th class="checkbox-col"><input type="checkbox" id="selectAll" onchange="toggleSelectAll(this)"></th>' : '') +
+  thead.innerHTML = (viewMode === 'detail' && editar ? '<th class="checkbox-col"><input type="checkbox" id="selectAll" onchange="toggleSelectAll(this)"></th>' : '') +
     cols.map(c => `<th>${c[1]}<br><input type="text" class="col-filter" data-k="${c[0]}" placeholder="Filtrar" style="width:90%;font-size:0.75rem;margin-top:2px;"></th>`).join('') +
-    (viewMode === 'detail' ? '<th></th>' : '');
+    (viewMode === 'detail' && editar ? '<th></th>' : '');
 
   document.querySelectorAll('.col-filter').forEach(inp => {
     const k = inp.dataset.k;
@@ -2439,19 +2539,19 @@ function renderEstoque() {
   for (let i = inicio; i < fim; i++) {
     const c = filtered[i];
     const tr = document.createElement('tr');
-    let html = viewMode === 'detail' ? `<td class="checkbox-col"><input type="checkbox" class="row-check" data-i="${i}"></td>` : '';
+    let html = viewMode === 'detail' && editar ? `<td class="checkbox-col"><input type="checkbox" class="row-check" data-i="${i}"></td>` : '';
     cols.forEach(([key]) => {
       let val = c[key] ?? '';
       if (key === 'ml' || key === 'custo' || key === 'pvs') val = formatMoney(val);
       else if (key === 'desconto') val = formatPct(val);
-      const locked = LOCKED.includes(key) || viewMode === 'simple';
+      const locked = LOCKED.includes(key) || viewMode === 'simple' || !editar;
       if (locked) {
         html += `<td class="card-name" data-nome="${esc(c.nome)}" data-set="${esc(c.setCode || '')}">${esc(val)}</td>`;
       } else {
         html += `<td><input class="edit-input" data-i="${i}" data-k="${key}" value="${esc(val)}"></td>`;
       }
     });
-    if (viewMode === 'detail') html += `<td><button class="secondary small" style="background:#c41e3a;" onclick="removerLinha(${i})">×</button></td>`;
+    if (viewMode === 'detail' && editar) html += `<td><button class="secondary small" style="background:#c41e3a;" onclick="removerLinha(${i})">×</button></td>`;
     tr.innerHTML = html;
     frag.appendChild(tr);
   }
@@ -3018,7 +3118,14 @@ function renderPedidoTabela() {
     </div>`;
   document.getElementById('pedResultado').innerHTML = html;
   document.getElementById('pedResultado').style.display = 'block';
-  document.getElementById('btnBaixa').style.display = 'inline-block';
+  document.getElementById('btnBaixa').style.display = podeEditar() ? 'inline-block' : 'none';
+  if (!podeEditar()) {
+    document.querySelectorAll('#pedResultado input, #pedResultado select, #pedResultado textarea').forEach(el => { el.disabled = true; });
+    document.querySelectorAll('#pedResultado button').forEach(btn => {
+      const txt = btn.textContent || '';
+      if (!/Imprimir|Exportar|Fechar/.test(txt)) btn.style.display = 'none';
+    });
+  }
 }
 
 function totalizarPedido() {
@@ -5083,8 +5190,7 @@ function renderDeck() {
     <button class="secondary small" type="button" onclick="copiarDeck(false)">Copiar lista completa</button>
     <button class="secondary small" type="button" onclick="copiarDeck(true)">Copiar só o que temos</button>
     <button class="secondary small" type="button" onclick="exportarDeck()">Exportar</button>
-    <button class="primary small" type="button" onclick="deckParaPedidos()">Levar o que temos para Pedidos</button>
-    <button class="primary small" type="button" onclick="gerarOrcamentoDoDeck()">Gerar orçamento</button>
+    ${podeEditar() ? '<button class="primary small" type="button" onclick="deckParaPedidos()">Levar o que temos para Pedidos</button><button class="primary small" type="button" onclick="gerarOrcamentoDoDeck()">Gerar orçamento</button>' : ''}
     <button class="primary small" type="button" id="btnCompletarDeck" onclick="completarDeck()">Completar deck</button>
   </div>`;
   html += quadroDeck();
@@ -5780,19 +5886,155 @@ function deckParaPedidos() {
 }
 
 
-document.addEventListener('DOMContentLoaded', async () => {
-  await carregarRegrasPVS();
-  await carregarPastasMeta();
+const NOME_PAPEL = { admin: 'Administrador', socio: 'Sócio', cliente: 'Cliente' };
+
+function aplicarPermissoes() {
+  const papel = usuarioAtual.papel;
+  const abas = ABAS_POR_PAPEL[papel] || ['estoque'];
+  document.querySelectorAll('.so-admin').forEach(el => {
+    el.style.display = papel === 'admin' ? '' : 'none';
+  });
+  const pastas = document.getElementById('cardPastas');
+  if (pastas) pastas.style.display = papel === 'cliente' ? 'none' : '';
+  document.querySelectorAll('nav button').forEach(btn => {
+    btn.style.display = abas.includes(btn.dataset.tab) ? '' : 'none';
+  });
+  const box = document.getElementById('quemEsta');
+  if (box) box.innerHTML = '<div>' + esc(usuarioAtual.nome) + '</div><div class="muted">' + (NOME_PAPEL[papel] || papel) + '</div><button class="secondary small" type="button" onclick="sair()">Sair</button>';
+  const primeira = document.querySelector('nav button[data-tab="' + abas[0] + '"]');
+  if (primeira) primeira.click();
+  if (papel === 'admin') carregarUsuarios();
+}
+
+async function entrar() {
+  const login = document.getElementById('loginUser').value.trim();
+  const senha = document.getElementById('loginSenha').value;
+  const erro = document.getElementById('loginErro');
+  erro.textContent = 'Entrando...';
+  try {
+    const r = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ login, senha })
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) { erro.textContent = data.error || 'Não consegui entrar.'; return; }
+    localStorage.setItem('sessaoToken', data.token);
+    usuarioAtual = data.usuario;
+    document.getElementById('telaLogin').style.display = 'none';
+    erro.textContent = '';
+    await abrirPlataforma();
+  } catch (e) {
+    erro.textContent = 'O servidor não respondeu. Confira se os arquivos novos já estão no ar.';
+  }
+}
+
+async function sair() {
+  fetch('/api/logout', { method: 'POST' }).catch(() => {});
+  localStorage.removeItem('sessaoToken');
+  location.reload();
+}
+
+async function abrirPlataforma() {
+  aplicarPermissoes();
+  if (usuarioAtual.papel !== 'cliente') {
+    await carregarRegrasPVS();
+    await carregarPastasMeta();
+  }
   await carregarListaClasseA();
   await carregarEstoqueServidor();
-  await carregarRegistros();
+  if (usuarioAtual.papel !== 'cliente') {
+    await carregarRegistros();
+    renderHistorico();
+    renderOrcamentosSalvos();
+    prepararFinanceiro();
+  }
   renderPastas();
-  renderHistorico();
-  renderOrcamentosSalvos();
-  prepararFinanceiro();
-});
+  renderEstoque();
+}
+
+async function iniciarSessao() {
+  const token = localStorage.getItem('sessaoToken');
+  if (!token) return;
+  try {
+    const r = await fetch('/api/eu');
+    if (!r.ok) { localStorage.removeItem('sessaoToken'); return; }
+    usuarioAtual = await r.json();
+    document.getElementById('telaLogin').style.display = 'none';
+    await abrirPlataforma();
+  } catch (e) {}
+}
+
+async function carregarUsuarios() {
+  const el = document.getElementById('listaUsuarios');
+  if (!el || !podeEditar()) return;
+  const r = await fetch('/api/usuarios');
+  if (!r.ok) { el.textContent = 'Não consegui listar as contas.'; return; }
+  const lista = await r.json();
+  el.innerHTML = '<table><thead><tr><th>Nome</th><th>Usuário</th><th>Perfil</th><th></th></tr></thead><tbody>' +
+    lista.map(u => '<tr><td>' + esc(u.nome) + (u.ativo ? '' : ' (inativa)') + '</td><td>' + esc(u.login) + '</td><td>' + esc(NOME_PAPEL[u.papel] || u.papel) + '</td><td>' +
+      '<button class="secondary small" type="button" onclick="trocarPerfilConta(' + u.id + ',\'' + u.papel + '\')">Mudar perfil</button> ' +
+      '<button class="secondary small" type="button" onclick="trocarSenhaConta(' + u.id + ')">Nova senha</button> ' +
+      '<button class="secondary small" type="button" onclick="alternarConta(' + u.id + ',' + (u.ativo ? 0 : 1) + ')">' + (u.ativo ? 'Desativar' : 'Reativar') + '</button>' +
+      '</td></tr>').join('') + '</tbody></table>';
+}
+
+async function criarConta() {
+  const nome = document.getElementById('novaContaNome').value.trim();
+  const login = document.getElementById('novaContaLogin').value.trim();
+  const senha = document.getElementById('novaContaSenha').value;
+  const papel = document.getElementById('novaContaPapel').value;
+  const r = await fetch('/api/usuarios', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ nome, login, senha, papel })
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) { alert(data.error || 'Não consegui criar a conta.'); return; }
+  document.getElementById('novaContaNome').value = '';
+  document.getElementById('novaContaLogin').value = '';
+  document.getElementById('novaContaSenha').value = '';
+  carregarUsuarios();
+  alert('Conta criada.');
+}
+
+async function salvarConta(id, corpo) {
+  const r = await fetch('/api/usuarios/' + id, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(corpo)
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) { alert(data.error || 'Não consegui alterar a conta.'); return; }
+  carregarUsuarios();
+}
+
+function trocarPerfilConta(id, atual) {
+  const prox = prompt('Digite o novo perfil: admin, socio ou cliente', atual);
+  if (!prox) return;
+  salvarConta(id, { papel: prox.trim().toLowerCase() });
+}
+
+function trocarSenhaConta(id) {
+  const senha = prompt('Nova senha (mínimo 4 caracteres)');
+  if (!senha) return;
+  salvarConta(id, { senha });
+}
+
+function alternarConta(id, ativo) {
+  const msg = ativo ? 'Reativar esta conta?' : 'Desativar esta conta? Ela não consegue mais entrar.';
+  if (!confirm(msg)) return;
+  salvarConta(id, { ativo: ativo ? 1 : 0 });
+}
+
+document.addEventListener('DOMContentLoaded', () => { iniciarSessao(); });
 function linhaCardPopup(card, extra) {
-  return `<strong>${esc(card.nome)}</strong>${extra || ''}<br>LLP: ${formatMoney(card.ml)} | PVS: ${formatMoney(card.pvs)}<br>Idioma: ${esc(card.lang) || '-'} | Estado: ${esc(card.cond) || '-'}<br>Extras: ${esc(card.extras) || '-'} | Pasta: ${esc(card.pasta) || '-'}<br>Qtd em estoque: ${card.qtd}`;
+  const cliente = usuarioAtual && usuarioAtual.papel === 'cliente';
+  const preco = cliente
+    ? ('PVS: ' + formatMoney(card.pvs))
+    : ('LLP: ' + formatMoney(card.ml) + ' | PVS: ' + formatMoney(card.pvs));
+  const pasta = cliente ? '' : (' | Pasta: ' + (esc(card.pasta) || '-'));
+  return '<strong>' + esc(card.nome) + '</strong>' + (extra || '') + '<br>' + preco + '<br>Idioma: ' + (esc(card.lang) || '-') + ' | Estado: ' + (esc(card.cond) || '-') + '<br>Extras: ' + (esc(card.extras) || '-') + pasta + '<br>Qtd em estoque: ' + card.qtd;
 }
 
 document.addEventListener('mouseover', async function(e) {
