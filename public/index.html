@@ -92,6 +92,16 @@
   }
   .estoque-resumo strong { color: var(--azul); }
   #estoque { padding-right: 270px; }
+  .vitrine-head { display:flex; justify-content:space-between; align-items:flex-end; gap:1rem; flex-wrap:wrap; margin-bottom:0.8rem; }
+  .vitrine-total { font-size:1.7rem; font-weight:750; color:var(--dourado); line-height:1; }
+  .vitrine-board { display:flex; gap:0.75rem; align-items:flex-start; overflow:auto; padding-bottom:0.6rem; }
+  .vitrine-col { flex:0 0 176px; min-width:176px; }
+  .vitrine-col h3 { margin:0 0 0.45rem; font-size:0.82rem; color:var(--azul-claro); }
+  .vitrine-tile { position:relative; margin:0 0 0.7rem; }
+  .vitrine-tile img { width:100%; aspect-ratio:488/680; object-fit:cover; border-radius:8px; background:#0e141b; display:block; }
+  .vitrine-tile .extras-tag { position:absolute; top:6px; left:6px; right:6px; background:rgba(196,30,58,0.92); color:#fff; font-size:0.68rem; font-weight:700; padding:0.12rem 0.35rem; border-radius:4px; }
+  .vitrine-tile .nome { font-size:0.75rem; margin-top:0.2rem; }
+  .vitrine-tile .preco { font-size:0.78rem; color:var(--dourado); font-weight:700; }
   .pasta-dots {
     position: absolute; top: 6px; right: 6px; border: none; background: rgba(18,22,28,0.85); color: var(--texto);
     border-radius: 6px; cursor: pointer; font-size: 1.2rem; line-height: 1; padding: 0.15rem 0.35rem;
@@ -108,7 +118,7 @@
   <img src="logo.png" alt="Cozinha Offline Store">
   <div>
     <h1>Cozinha Offline Store</h1>
-    <p>Gestão de estoque, pedidos e orçamentos · versão 24/11</p>
+    <p>Gestão de estoque, pedidos e orçamentos · versão 26/11</p>
   </div>
   <div id="quemEsta" style="margin-left:auto;text-align:right;font-size:0.9rem;"></div>
 </header>
@@ -136,6 +146,7 @@
     <p id="loginErro" class="muted"></p>
   </div>
 </div>
+<div id="paginaPublica" style="display:none;padding:1.2rem;max-width:1480px;margin:0 auto;"></div>
 <main>
   <div id="estoque" class="tab active">
     <aside id="estoqueResumo" class="estoque-resumo"></aside>
@@ -412,6 +423,7 @@
         <div id="dbProgressoTxt" class="muted" style="margin-top:0.3rem;"></div>
       </div>
       <div id="dbStatus" class="muted" style="margin-top:0.6rem;"></div>
+      <div id="listaDecksSalvos" class="so-admin" style="margin-top:1rem;"></div>
       <div id="dbResultado" style="display:none;margin-top:1rem;"></div>
       <datalist id="listaNomesDeck"></datalist>
     </div>
@@ -519,7 +531,8 @@
   <div id="vitrine" class="tab">
     <div class="card">
       <h2>Vitrine</h2>
-      <p>Esta aba ainda será montada. Aqui o cliente vai ver as cartas à venda, sem as pastas do estoque físico.</p>
+      <p class="muted">Decks à venda. O preço ao lado do nome é o total. Passe o mouse no card para ver a edição, o estado, os extras e o preço.</p>
+      <div id="vitrineLista"></div>
     </div>
   </div>
   <div id="config" class="tab">
@@ -3105,6 +3118,7 @@ function renderPedidoTabela() {
     <div style="margin-top:0.6rem;">
       <button class="secondary small" onclick="adicionarListaPedido()">Incluir lista</button>
       <button class="primary small" onclick="salvarOrcamentoAtual(true)">Salvar</button>
+      <button class="secondary small" onclick="orcamentoParaDeck()">Adicionar ao Deckbuilder</button>
       <button class="secondary small" onclick="imprimirOrcamento()">Imprimir</button>
       <button class="secondary small" onclick="exportarOrcamento()">Exportar</button>
       <button class="secondary small" onclick="menuAlterarPrecos()">Alterar preços</button>
@@ -4451,7 +4465,8 @@ function infoEstoqueDeck(nome) {
     ml: parseFloat(c.ml) || 0,
     custo: parseFloat(c.custo) || 0,
     nomePt: c.nomePt || '',
-    codigo: c.codigo || ''
+    codigo: c.codigo || '',
+    scryfallId: c.scryfallId || ''
   };
 }
 
@@ -5192,11 +5207,13 @@ function renderDeck() {
     <button class="secondary small" type="button" onclick="exportarDeck()">Exportar</button>
     ${podeEditar() ? '<button class="primary small" type="button" onclick="deckParaPedidos()">Levar o que temos para Pedidos</button><button class="primary small" type="button" onclick="gerarOrcamentoDoDeck()">Gerar orçamento</button>' : ''}
     <button class="primary small" type="button" id="btnCompletarDeck" onclick="completarDeck()">Completar deck</button>
+    ${botoesDeckSalvo()}
   </div>`;
   html += quadroDeck();
   html += renderSugestoesDeck();
   box.innerHTML = html;
   box.style.display = 'block';
+  agendarSyncDeck();
 }
 
 function setProgressoDeck(pct, txt) {
@@ -5607,6 +5624,7 @@ function aplicarCopiaNoItem(it, info) {
   it.ml = info.ml || 0;
   it.custo = info.custo || 0;
   it.codigo = info.codigo || '';
+  it.scryfallId = info.scryfallId || it.scryfallId || '';
   it.qtdDisponivel = info.qtd || 0;
   it.noEstoque = true;
 }
@@ -5886,6 +5904,302 @@ function deckParaPedidos() {
 }
 
 
+
+let decksSalvos = [];
+let syncDeckTimer = null;
+
+function precoItemDeck(it) {
+  const n = it.preco != null ? it.preco : it.pvs;
+  const v = parseFloat(n);
+  return Number.isFinite(v) ? v : null;
+}
+
+function totalDeck(deck) {
+  return Math.round((deck.itens || []).reduce((s, it) => {
+    const p = precoItemDeck(it);
+    return s + (p || 0) * (parseInt(it.qtd, 10) || 1);
+  }, 0) * 100) / 100;
+}
+
+function copiaDeck(deck) {
+  return JSON.parse(JSON.stringify(deck));
+}
+
+function botoesDeckSalvo() {
+  if (!podeEditar() || !deckAtual) return '';
+  const salvo = !!deckAtual.id;
+  const naVitrine = !!(deckAtual.id && deckAtual.vitrine);
+  let html = '<button class="primary small" type="button" onclick="salvarDeckAtual()">Salvar deck</button>';
+  if (salvo) html += '<button class="secondary small" type="button" style="background:#c41e3a;" onclick="excluirDeckAtual()">Excluir deck</button>';
+  if (!naVitrine) html += '<button class="secondary small" type="button" onclick="adicionarDeckVitrine()">Adicionar à vitrine</button>';
+  else html += '<button class="secondary small" type="button" onclick="retirarDeckVitrine()">Retirar da vitrine</button>';
+  if (naVitrine) html += '<button class="secondary small" type="button" onclick="copiarLinkDeck(\'' + deckAtual.id + '\')">Copiar link</button>';
+  return html;
+}
+
+function agendarSyncDeck() {
+  if (!deckAtual || !deckAtual.id || !podeEditar()) return;
+  clearTimeout(syncDeckTimer);
+  syncDeckTimer = setTimeout(() => { sincronizarDeckSalvo(); }, 500);
+}
+
+async function carregarDecksSalvos() {
+  const data = await lerConfig('decks');
+  decksSalvos = Array.isArray(data) ? data : [];
+  renderListaDecks();
+}
+
+async function gravarDecksSalvos() {
+  await salvarConfig('decks', decksSalvos);
+  renderListaDecks();
+  renderVitrine();
+}
+
+function snapshotDeckAtual() {
+  const deck = copiaDeck(deckAtual);
+  deck.nome = (deck.meta && deck.meta.nome) || 'Deck';
+  deck.atualizado = new Date().toISOString();
+  deck.gasto = totalDeck(deck);
+  return deck;
+}
+
+async function salvarDeckAtual() {
+  if (!podeEditar()) return;
+  if (!deckAtual || !(deckAtual.itens || []).length) { alert('Monte ou abra uma lista antes.'); return; }
+  if (!deckAtual.id) deckAtual.id = 'd' + Date.now().toString(36);
+  const snap = snapshotDeckAtual();
+  const i = decksSalvos.findIndex(d => d.id === snap.id);
+  if (i >= 0) decksSalvos[i] = snap;
+  else decksSalvos.unshift(snap);
+  deckAtual.vitrine = !!snap.vitrine;
+  try {
+    await gravarDecksSalvos();
+    renderDeck();
+    alert('Deck salvo.');
+  } catch (e) {
+    alert('Não consegui salvar o deck.');
+  }
+}
+
+async function sincronizarDeckSalvo() {
+  if (!deckAtual || !deckAtual.id || !podeEditar()) return;
+  const snap = snapshotDeckAtual();
+  const i = decksSalvos.findIndex(d => d.id === snap.id);
+  if (i < 0) return;
+  snap.vitrine = !!decksSalvos[i].vitrine;
+  deckAtual.vitrine = snap.vitrine;
+  decksSalvos[i] = snap;
+  try { await gravarDecksSalvos(); } catch (e) {}
+}
+
+async function excluirDeckAtual() {
+  if (!deckAtual || !deckAtual.id) return;
+  const nome = (deckAtual.meta && deckAtual.meta.nome) || 'este deck';
+  if (!confirm('Tem certeza que deseja excluir "' + nome + '" da lista de decks?')) return;
+  decksSalvos = decksSalvos.filter(d => d.id !== deckAtual.id);
+  deckAtual.id = null;
+  deckAtual.vitrine = false;
+  try {
+    await gravarDecksSalvos();
+    renderDeck();
+  } catch (e) {
+    alert('Não consegui excluir o deck.');
+  }
+}
+
+async function adicionarDeckVitrine() {
+  if (!deckAtual || !(deckAtual.itens || []).length) { alert('A lista está vazia.'); return; }
+  if (!deckAtual.id) deckAtual.id = 'd' + Date.now().toString(36);
+  deckAtual.vitrine = true;
+  const snap = snapshotDeckAtual();
+  snap.vitrine = true;
+  const i = decksSalvos.findIndex(d => d.id === snap.id);
+  if (i >= 0) decksSalvos[i] = snap;
+  else decksSalvos.unshift(snap);
+  try {
+    await gravarDecksSalvos();
+    renderDeck();
+    copiarLinkDeck(snap.id);
+  } catch (e) {
+    alert('Não consegui publicar o deck.');
+  }
+}
+
+async function retirarDeckVitrine() {
+  if (!deckAtual || !deckAtual.id) return;
+  deckAtual.vitrine = false;
+  const i = decksSalvos.findIndex(d => d.id === deckAtual.id);
+  if (i >= 0) {
+    decksSalvos[i] = snapshotDeckAtual();
+    decksSalvos[i].vitrine = false;
+  }
+  try {
+    await gravarDecksSalvos();
+    renderDeck();
+  } catch (e) {
+    alert('Não consegui retirar o deck da vitrine.');
+  }
+}
+
+function linkDeck(id) {
+  return location.origin + '/d/' + id;
+}
+
+function copiarLinkDeck(id) {
+  const url = linkDeck(id);
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(url).then(() => alert('Link copiado:\n' + url)).catch(() => prompt('Copie o link:', url));
+  } else prompt('Copie o link:', url);
+}
+
+function renderListaDecks() {
+  const el = document.getElementById('listaDecksSalvos');
+  if (!el) return;
+  if (!decksSalvos.length) { el.innerHTML = '<p class="muted">Nenhum deck salvo ainda.</p>'; return; }
+  el.innerHTML = '<h3>Decks salvos</h3>' + decksSalvos.map(d => {
+    const nome = esc((d.meta && d.meta.nome) || d.nome || 'Deck');
+    const marca = d.vitrine ? ' · na vitrine' : '';
+    return '<div style="display:flex;gap:0.4rem;align-items:center;margin:0.25rem 0;flex-wrap:wrap;"><button class="secondary small" type="button" onclick="abrirDeckSalvo(\'' + d.id + '\')">' + nome + '</button><span class="muted">' + (d.itens || []).reduce((s, it) => s + (parseInt(it.qtd, 10) || 1), 0) + ' cartas' + marca + '</span></div>';
+  }).join('');
+}
+
+function abrirDeckSalvo(id) {
+  const d = decksSalvos.find(x => x.id === id);
+  if (!d) return;
+  deckAtual = copiaDeck(d);
+  if (!deckAtual.meta) deckAtual.meta = { nome: deckAtual.nome || 'Deck', decks: 0, salt: 0, url: '' };
+  sugestoesDeck = [];
+  recalcularGastoDeck();
+  const aba = document.querySelector('nav button[data-tab="deckbuilder"]');
+  if (aba) aba.click();
+  renderDeck();
+}
+
+function orcamentoParaDeck() {
+  if (!podeEditar()) return;
+  if (!pedidoAtual || !(pedidoAtual.itens || []).length) { alert('Gere um orçamento antes.'); return; }
+  const itens = pedidoAtual.itens.filter(it => it.nome).map(it => ({
+    nome: it.nome,
+    nomePt: it.nomePt || '',
+    qtd: it.qtd || 1,
+    categoria: 'Outras',
+    funcao: 'Outras',
+    noEstoque: !!it.encontrado,
+    pvs: it.preco,
+    set: it.set || '',
+    setCode: it.setCode || '',
+    cond: it.cond || '',
+    lang: it.lang || '',
+    extras: it.extras || '',
+    pasta: it.pasta || '',
+    scryfallId: it.scryfallId || '',
+    qtdNoEstoque: it.encontrado ? (it.qtd || 1) : 0,
+    foraOrcamento: false
+  }));
+  deckAtual = {
+    id: null,
+    vitrine: false,
+    meta: { nome: (pedidoAtual.titulo || pedidoAtual.cliente || 'Deck do orçamento'), decks: 0, salt: 0, url: '', cores: [] },
+    orcamento: null,
+    soEstoque: false,
+    gasto: 0,
+    itens
+  };
+  recalcularGastoDeck();
+  const aba = document.querySelector('nav button[data-tab="deckbuilder"]');
+  if (aba) aba.click();
+  renderDeck();
+}
+
+function gruposVitrine(deck) {
+  const ordem = new Map(FUNCOES_DECK.map((f, i) => [f, i]));
+  const grupos = new Map();
+  (deck.itens || []).forEach(it => {
+    const f = it.funcao || it.categoria || 'Outras';
+    if (!grupos.has(f)) grupos.set(f, []);
+    grupos.get(f).push(it);
+  });
+  return [...grupos.keys()].sort((a, b) => {
+    const ia = ordem.has(a) ? ordem.get(a) : 500;
+    const ib = ordem.has(b) ? ordem.get(b) : 500;
+    if (ia !== ib) return ia - ib;
+    return a.localeCompare(b, 'pt');
+  }).map(f => ({ funcao: f, itens: grupos.get(f) }));
+}
+
+function srcCarta(it, semSet) {
+  if (!semSet && it.scryfallId && String(it.scryfallId).length > 10) return 'https://api.scryfall.com/cards/' + encodeURIComponent(it.scryfallId) + '?format=image&version=small';
+  let u = 'https://api.scryfall.com/cards/named?format=image&version=small&exact=' + encodeURIComponent(it.nome || '');
+  if (!semSet && it.setCode && String(it.setCode).length >= 3) u += '&set=' + encodeURIComponent(it.setCode);
+  return u;
+}
+
+function htmlDeckVitrine(deck, publico) {
+  const nome = esc(deck.nome || (deck.meta && deck.meta.nome) || 'Deck');
+  const total = deck.total != null ? deck.total : totalDeck(deck);
+  const qtd = (deck.itens || []).reduce((s, it) => s + (parseInt(it.qtd, 10) || 1), 0);
+  let html = '<article class="card" style="margin-bottom:1.2rem;">';
+  html += '<div class="vitrine-head"><div><h2 style="margin:0;">' + nome + '</h2><p class="muted" style="margin:0.25rem 0 0;">' + qtd + ' cartas</p></div>';
+  html += '<div style="text-align:right;"><div class="muted">Total</div><div class="vitrine-total">' + formatMoney(total) + '</div></div></div>';
+  if (!publico && podeEditar() && deck.id) {
+    html += '<div style="margin-bottom:0.7rem;"><button class="secondary small" type="button" onclick="copiarLinkDeck(\'' + deck.id + '\')">Copiar link público</button> <span class="muted">' + esc(linkDeck(deck.id)) + '</span></div>';
+  }
+  html += '<div class="vitrine-board">';
+  gruposVitrine(deck).forEach(g => {
+    const sub = g.itens.reduce((s, it) => s + (precoItemDeck(it) || 0) * (parseInt(it.qtd, 10) || 1), 0);
+    const n = g.itens.reduce((s, it) => s + (parseInt(it.qtd, 10) || 1), 0);
+    html += '<section class="vitrine-col"><h3>' + esc(g.funcao) + ' · ' + n + '<br><span class="muted">' + formatMoney(sub) + '</span></h3>';
+    g.itens.forEach(it => {
+      const preco = precoItemDeck(it);
+      const q = parseInt(it.qtd, 10) || 1;
+      const fb = srcCarta(it, true).replace(/"/g, '');
+      html += '<div class="vitrine-tile card-name" data-modo="vitrine" data-nome="' + esc(it.nome) + '" data-set="' + esc(it.setCode || '') + '" data-edicao="' + esc(it.set || '') + '" data-cond="' + esc(it.cond || '') + '" data-extras="' + esc(it.extras || '') + '" data-preco="' + (preco == null ? '' : preco) + '" data-scryfall="' + esc(it.scryfallId || '') + '">';
+      html += '<img alt="' + esc(it.nome) + '" src="' + srcCarta(it, false) + '" onerror="if(!this.dataset.fb){this.dataset.fb=1;this.src=\'' + fb.replace(/'/g, '') + '\';}">';
+      if (it.extras) html += '<div class="extras-tag">' + esc(it.extras) + '</div>';
+      html += '<div class="nome">' + (q > 1 ? q + '× ' : '') + esc(it.nome) + '</div>';
+      html += '<div class="preco">' + (preco == null ? '—' : formatMoney(preco)) + '</div></div>';
+    });
+    html += '</section>';
+  });
+  html += '</div></article>';
+  return html;
+}
+
+async function renderVitrine() {
+  const el = document.getElementById('vitrineLista');
+  if (!el) return;
+  el.innerHTML = '<p class="muted">Carregando vitrine...</p>';
+  try {
+    const r = await fetch('/api/publico/vitrine');
+    const lista = await r.json();
+    if (!r.ok || !Array.isArray(lista)) { el.innerHTML = '<p class="muted">Não consegui carregar a vitrine.</p>'; return; }
+    if (!lista.length) { el.innerHTML = '<p class="muted">Nenhum deck na vitrine ainda.</p>'; return; }
+    el.innerHTML = lista.map(d => htmlDeckVitrine(d, false)).join('');
+  } catch (e) {
+    el.innerHTML = '<p class="muted">Não consegui carregar a vitrine.</p>';
+  }
+}
+
+async function abrirDeckPublico(id) {
+  const login = document.getElementById('telaLogin');
+  if (login) login.style.display = 'none';
+  const top = document.querySelector('.topbar');
+  if (top) top.style.display = 'none';
+  const main = document.querySelector('main');
+  if (main) main.style.display = 'none';
+  const box = document.getElementById('paginaPublica');
+  box.style.display = 'block';
+  box.innerHTML = '<p class="muted">Carregando deck...</p>';
+  try {
+    const r = await fetch('/api/publico/vitrine/' + encodeURIComponent(id));
+    const deck = await r.json();
+    if (!r.ok) { box.innerHTML = '<h2>Deck indisponível</h2><p>Este link não está mais na vitrine.</p>'; return; }
+    box.innerHTML = '<p class="muted" style="margin-top:0;">Cozinha Offline Store</p>' + htmlDeckVitrine(deck, true);
+  } catch (e) {
+    box.innerHTML = '<p>Não consegui abrir este deck.</p>';
+  }
+}
+
 const NOME_PAPEL = { admin: 'Administrador', socio: 'Sócio', cliente: 'Cliente' };
 
 function aplicarPermissoes() {
@@ -5951,6 +6265,8 @@ async function abrirPlataforma() {
   }
   renderPastas();
   renderEstoque();
+  if (usuarioAtual.papel === 'admin') await carregarDecksSalvos();
+  renderVitrine();
 }
 
 async function iniciarSessao() {
@@ -6027,8 +6343,16 @@ function alternarConta(id, ativo) {
   salvarConta(id, { ativo: ativo ? 1 : 0 });
 }
 
-document.addEventListener('DOMContentLoaded', () => { iniciarSessao(); });
+document.addEventListener('DOMContentLoaded', () => {
+  const pub = location.pathname.match(/^\/d\/([A-Za-z0-9_-]+)/);
+  if (pub) { abrirDeckPublico(pub[1]); return; }
+  iniciarSessao();
+});
 function linhaCardPopup(card, extra) {
+  if (card && card.vitrine) {
+    const preco = card.pvs == null || Number.isNaN(Number(card.pvs)) ? '—' : formatMoney(card.pvs);
+    return '<strong>' + esc(card.nome) + '</strong>' + (extra || '') + '<br>Edição: ' + (esc(card.set) || '-') + '<br>Estado: ' + (esc(card.cond) || '-') + '<br>Extras: ' + (esc(card.extras) || '-') + '<br>Preço: ' + preco;
+  }
   const cliente = usuarioAtual && usuarioAtual.papel === 'cliente';
   const preco = cliente
     ? ('PVS: ' + formatMoney(card.pvs))
@@ -6043,8 +6367,14 @@ document.addEventListener('mouseover', async function(e) {
   const nome = td.dataset.nome || td.textContent.trim();
   if (!nome) return;
   const setCode = td.dataset.set || '';
-  const card = estoque.find(c => c.nome === nome && (!setCode || c.setCode === setCode)) || estoque.find(c => c.nome === nome);
-  if (!card) return;
+  let card = null;
+  if (td.dataset.modo === 'vitrine') {
+    const preco = td.dataset.preco === '' ? null : Number(td.dataset.preco);
+    card = { vitrine: true, nome, set: td.dataset.edicao || '', setCode, cond: td.dataset.cond || '', extras: td.dataset.extras || '', pvs: Number.isNaN(preco) ? null : preco, scryfallId: td.dataset.scryfall || '' };
+  } else {
+    card = estoque.find(c => c.nome === nome && (!setCode || c.setCode === setCode)) || estoque.find(c => c.nome === nome);
+    if (!card) return;
+  }
 
   clearTimeout(popupTimeout);
   popupTimeout = setTimeout(async () => {
