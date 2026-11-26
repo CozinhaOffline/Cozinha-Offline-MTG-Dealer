@@ -102,6 +102,15 @@
   .vitrine-tile .extras-tag { position:absolute; top:6px; left:6px; right:6px; background:rgba(196,30,58,0.92); color:#fff; font-size:0.68rem; font-weight:700; padding:0.12rem 0.35rem; border-radius:4px; }
   .vitrine-tile .nome { font-size:0.75rem; margin-top:0.2rem; }
   .vitrine-tile .preco { font-size:0.78rem; color:var(--dourado); font-weight:700; }
+  .vitrine-modos { display:flex; gap:0.4rem; margin:0.5rem 0 0.9rem; }
+  .vitrine-modos button.ativo { background:var(--vermelho); color:#fff; border-color:var(--vermelho); }
+  .vitrine-secao { margin:0 0 1rem; }
+  .vitrine-secao h3 { margin:0 0 0.4rem; font-size:0.9rem; color:var(--azul-claro); }
+  .vitrine-grid { display:flex; flex-wrap:wrap; gap:0.55rem; align-items:flex-start; }
+  .vitrine-grid .vitrine-tile { width:148px; margin:0; flex:0 0 148px; }
+  .vitrine-linha { display:flex; justify-content:space-between; align-items:baseline; gap:1rem; padding:0.32rem 0.15rem; border-bottom:1px solid var(--borda); cursor:pointer; }
+  .vitrine-linha .esq { text-align:left; }
+  .vitrine-linha .preco { margin-left:auto; text-align:right; white-space:nowrap; color:var(--dourado); font-weight:700; }
   .pasta-dots {
     position: absolute; top: 6px; right: 6px; border: none; background: rgba(18,22,28,0.85); color: var(--texto);
     border-radius: 6px; cursor: pointer; font-size: 1.2rem; line-height: 1; padding: 0.15rem 0.35rem;
@@ -118,7 +127,7 @@
   <img src="logo.png" alt="Cozinha Offline Store">
   <div>
     <h1>Cozinha Offline Store</h1>
-    <p>Gestão de estoque, pedidos e orçamentos · versão 26/11</p>
+    <p>Gestão de estoque, pedidos e orçamentos · versão 26/11b</p>
   </div>
   <div id="quemEsta" style="margin-left:auto;text-align:right;font-size:0.9rem;"></div>
 </header>
@@ -532,6 +541,10 @@
     <div class="card">
       <h2>Vitrine</h2>
       <p class="muted">Decks à venda. O preço ao lado do nome é o total. Passe o mouse no card para ver a edição, o estado, os extras e o preço.</p>
+      <div class="vitrine-modos">
+        <button type="button" class="secondary small" id="btnVitrineLista" onclick="definirModoVitrine('lista')">Lista</button>
+        <button type="button" class="secondary small" id="btnVitrineGrid" onclick="definirModoVitrine('grid')">Grade</button>
+      </div>
       <div id="vitrineLista"></div>
     </div>
   </div>
@@ -6075,7 +6088,47 @@ function abrirDeckSalvo(id) {
   renderDeck();
 }
 
-function orcamentoParaDeck() {
+const FUNCAO_POR_PAPEL = { wipe: 'Wipe', counter: 'Counter', remocao: 'Remoção', tutor: 'Tutor', compra: 'Compra', rampa: 'Ramp', protecao: 'Proteção', recursao: 'Recursão', token: 'Tokens' };
+const FUNCAO_POR_TIPO = { Creature: 'Criatura', Instant: 'Instant', Sorcery: 'Feitiço', Artifact: 'Artefato', Enchantment: 'Encantamento', Planeswalker: 'Planeswalker', Land: 'Terreno' };
+
+function funcaoDaCartaScryfall(card, titulo) {
+  const nome = card.name || '';
+  if (titulo && normNome(nome) === normNome(titulo)) return 'Comandante';
+  const linha = (card.type_line || (card.card_faces && card.card_faces[0] && card.card_faces[0].type_line) || '').toLowerCase();
+  if (NOMES_BASICOS.has(normNome(nome)) || linha.indexOf('basic land') >= 0) return 'Terreno básico';
+  const tipo = tipoPrincipal(card);
+  if (tipo === 'Land') return 'Terreno';
+  const papeis = papeisDaCarta(card);
+  if (tipo === 'Artifact' && papeis.indexOf('rampa') >= 0) return 'Artefato de mana';
+  const ordem = ['wipe', 'counter', 'remocao', 'tutor', 'compra', 'rampa', 'protecao', 'recursao', 'token'];
+  for (let i = 0; i < ordem.length; i++) {
+    if (papeis.indexOf(ordem[i]) >= 0) return FUNCAO_POR_PAPEL[ordem[i]];
+  }
+  return FUNCAO_POR_TIPO[tipo] || 'Outras';
+}
+
+async function classificarItensPorFuncao(itens, titulo) {
+  const nomes = [...new Set(itens.map(it => it.nome).filter(Boolean))];
+  let oficiais = [];
+  try { oficiais = await scryfallColecao(nomes); } catch (e) { oficiais = []; }
+  const porNome = new Map();
+  (oficiais || []).forEach(c => { if (c && c.name) porNome.set(normNome(c.name), c); });
+  itens.forEach(it => {
+    const card = porNome.get(normNome(it.nome));
+    let funcao = 'Outras';
+    if (titulo && normNome(it.nome) === normNome(titulo)) funcao = 'Comandante';
+    else if (NOMES_BASICOS.has(normNome(it.nome))) funcao = 'Terreno básico';
+    else if (card) funcao = funcaoDaCartaScryfall(card, titulo);
+    it.funcao = funcao;
+    it.categoria = funcao;
+    if (card) {
+      if (!it.scryfallId && card.id) it.scryfallId = card.id;
+      if (!it.setCode && card.set) it.setCode = card.set;
+    }
+  });
+}
+
+async function orcamentoParaDeck() {
   if (!podeEditar()) return;
   if (!pedidoAtual || !(pedidoAtual.itens || []).length) { alert('Gere um orçamento antes.'); return; }
   const itens = pedidoAtual.itens.filter(it => it.nome).map(it => ({
@@ -6096,19 +6149,128 @@ function orcamentoParaDeck() {
     qtdNoEstoque: it.encontrado ? (it.qtd || 1) : 0,
     foraOrcamento: false
   }));
+  const titulo = pedidoAtual.titulo || pedidoAtual.cliente || 'Deck do orçamento';
+  const aba = document.querySelector('nav button[data-tab="deckbuilder"]');
+  if (aba) aba.click();
+  const status = document.getElementById('dbStatus');
+  if (status) status.textContent = 'Separando as cartas por função...';
+  await classificarItensPorFuncao(itens, pedidoAtual.titulo || '');
   deckAtual = {
     id: null,
     vitrine: false,
-    meta: { nome: (pedidoAtual.titulo || pedidoAtual.cliente || 'Deck do orçamento'), decks: 0, salt: 0, url: '', cores: [] },
+    meta: { nome: titulo, decks: 0, salt: 0, url: '', cores: [] },
     orcamento: null,
     soEstoque: false,
     gasto: 0,
     itens
   };
   recalcularGastoDeck();
-  const aba = document.querySelector('nav button[data-tab="deckbuilder"]');
-  if (aba) aba.click();
+  if (status) status.textContent = 'Cartas separadas por função. Você ainda pode mudar a função de cada uma.';
   renderDeck();
+}
+
+let vitrineModo = 'grid';
+let vitrineCache = [];
+let vitrineDeckAberto = null;
+try { vitrineModo = localStorage.getItem('vitrineModo') === 'lista' ? 'lista' : 'grid'; } catch (e) {}
+
+function marcarBotoesVitrine() {
+  document.querySelectorAll('#btnVitrineLista, #btnVitrineGrid, .btn-modo-vitrine').forEach(btn => {
+    const ativo = btn.dataset.modo === vitrineModo || (btn.id === 'btnVitrineLista' && vitrineModo === 'lista') || (btn.id === 'btnVitrineGrid' && vitrineModo === 'grid');
+    btn.classList.toggle('ativo', ativo);
+  });
+}
+
+function definirModoVitrine(modo) {
+  vitrineModo = modo === 'lista' ? 'lista' : 'grid';
+  try { localStorage.setItem('vitrineModo', vitrineModo); } catch (e) {}
+  const box = document.getElementById('paginaPublica');
+  if (box && box.style.display !== 'none' && vitrineDeckAberto) {
+    box.innerHTML = '<p class="muted" style="margin-top:0;">Cozinha Offline Store</p>' + htmlDeckVitrine(vitrineDeckAberto, true);
+  }
+  const el = document.getElementById('vitrineLista');
+  if (el && vitrineCache.length) el.innerHTML = vitrineCache.map(d => htmlDeckVitrine(d, false)).join('');
+  marcarBotoesVitrine();
+}
+
+function htmlCartaVitrine(it) {
+  const preco = precoItemDeck(it);
+  const q = parseInt(it.qtd, 10) || 1;
+  const attrs = ' data-modo="vitrine" data-nome="' + esc(it.nome) + '" data-set="' + esc(it.setCode || '') + '" data-edicao="' + esc(it.set || '') + '" data-cond="' + esc(it.cond || '') + '" data-extras="' + esc(it.extras || '') + '" data-preco="' + (preco == null ? '' : preco) + '" data-scryfall="' + esc(it.scryfallId || '') + '"';
+  if (vitrineModo === 'lista') {
+    return '<div class="vitrine-linha card-name"' + attrs + '><span class="esq">' + q + ' ' + esc(it.nome) + '</span><span class="preco">' + (preco == null ? '—' : formatMoney(preco)) + '</span></div>';
+  }
+  const fb = srcCarta(it, true).replace(/"/g, '').replace(/'/g, '');
+  let html = '<div class="vitrine-tile card-name"' + attrs + '>';
+  html += '<img alt="' + esc(it.nome) + '" src="' + srcCarta(it, false) + '" onerror="if(!this.dataset.fb){this.dataset.fb=1;this.src=\'' + fb + '\';}">';
+  if (it.extras) html += '<div class="extras-tag">' + esc(it.extras) + '</div>';
+  html += '<div class="nome">' + (q > 1 ? q + '× ' : '') + esc(it.nome) + '</div>';
+  html += '<div class="preco">' + (preco == null ? '—' : formatMoney(preco)) + '</div></div>';
+  return html;
+}
+
+function htmlDeckVitrine(deck, publico) {
+  const nome = esc(deck.nome || (deck.meta && deck.meta.nome) || 'Deck');
+  const total = deck.total != null ? deck.total : totalDeck(deck);
+  const qtd = (deck.itens || []).reduce((s, it) => s + (parseInt(it.qtd, 10) || 1), 0);
+  let html = '<article class="card" style="margin-bottom:1.2rem;">';
+  html += '<div class="vitrine-head"><div><h2 style="margin:0;">' + nome + '</h2><p class="muted" style="margin:0.25rem 0 0;">' + qtd + ' cartas</p></div>';
+  html += '<div style="text-align:right;"><div class="muted">Total</div><div class="vitrine-total">' + formatMoney(total) + '</div></div></div>';
+  if (publico) {
+    html += '<div class="vitrine-modos"><button type="button" class="secondary small btn-modo-vitrine' + (vitrineModo === 'lista' ? ' ativo' : '') + '" data-modo="lista" onclick="definirModoVitrine(\'lista\')">Lista</button><button type="button" class="secondary small btn-modo-vitrine' + (vitrineModo === 'grid' ? ' ativo' : '') + '" data-modo="grid" onclick="definirModoVitrine(\'grid\')">Grade</button></div>';
+  }
+  if (!publico && podeEditar() && deck.id) {
+    html += '<div style="margin-bottom:0.7rem;"><button class="secondary small" type="button" onclick="copiarLinkDeck(\'' + deck.id + '\')">Copiar link público</button> <span class="muted">' + esc(linkDeck(deck.id)) + '</span></div>';
+  }
+  gruposVitrine(deck).forEach(g => {
+    const sub = g.itens.reduce((s, it) => s + (precoItemDeck(it) || 0) * (parseInt(it.qtd, 10) || 1), 0);
+    const n = g.itens.reduce((s, it) => s + (parseInt(it.qtd, 10) || 1), 0);
+    html += '<section class="vitrine-secao"><h3>' + esc(g.funcao) + ' · ' + n + ' · ' + formatMoney(sub) + '</h3>';
+    html += vitrineModo === 'lista' ? '' : '<div class="vitrine-grid">';
+    g.itens.forEach(it => { html += htmlCartaVitrine(it); });
+    html += vitrineModo === 'lista' ? '' : '</div>';
+    html += '</section>';
+  });
+  html += '</article>';
+  return html;
+}
+
+async function renderVitrine() {
+  const el = document.getElementById('vitrineLista');
+  if (!el) return;
+  el.innerHTML = '<p class="muted">Carregando vitrine...</p>';
+  try {
+    const r = await fetch('/api/publico/vitrine');
+    const lista = await r.json();
+    if (!r.ok || !Array.isArray(lista)) { el.innerHTML = '<p class="muted">Não consegui carregar a vitrine.</p>'; return; }
+    vitrineCache = lista;
+    if (!lista.length) { el.innerHTML = '<p class="muted">Nenhum deck na vitrine ainda.</p>'; marcarBotoesVitrine(); return; }
+    el.innerHTML = lista.map(d => htmlDeckVitrine(d, false)).join('');
+    marcarBotoesVitrine();
+  } catch (e) {
+    el.innerHTML = '<p class="muted">Não consegui carregar a vitrine.</p>';
+  }
+}
+
+async function abrirDeckPublico(id) {
+  const login = document.getElementById('telaLogin');
+  if (login) login.style.display = 'none';
+  const top = document.querySelector('.topbar');
+  if (top) top.style.display = 'none';
+  const main = document.querySelector('main');
+  if (main) main.style.display = 'none';
+  const box = document.getElementById('paginaPublica');
+  box.style.display = 'block';
+  box.innerHTML = '<p class="muted">Carregando deck...</p>';
+  try {
+    const r = await fetch('/api/publico/vitrine/' + encodeURIComponent(id));
+    const deck = await r.json();
+    if (!r.ok) { box.innerHTML = '<h2>Deck indisponível</h2><p>Este link não está mais na vitrine.</p>'; return; }
+    vitrineDeckAberto = deck;
+    box.innerHTML = '<p class="muted" style="margin-top:0;">Cozinha Offline Store</p>' + htmlDeckVitrine(deck, true);
+  } catch (e) {
+    box.innerHTML = '<p>Não consegui abrir este deck.</p>';
+  }
 }
 
 function gruposVitrine(deck) {
@@ -6132,72 +6294,6 @@ function srcCarta(it, semSet) {
   let u = 'https://api.scryfall.com/cards/named?format=image&version=small&exact=' + encodeURIComponent(it.nome || '');
   if (!semSet && it.setCode && String(it.setCode).length >= 3) u += '&set=' + encodeURIComponent(it.setCode);
   return u;
-}
-
-function htmlDeckVitrine(deck, publico) {
-  const nome = esc(deck.nome || (deck.meta && deck.meta.nome) || 'Deck');
-  const total = deck.total != null ? deck.total : totalDeck(deck);
-  const qtd = (deck.itens || []).reduce((s, it) => s + (parseInt(it.qtd, 10) || 1), 0);
-  let html = '<article class="card" style="margin-bottom:1.2rem;">';
-  html += '<div class="vitrine-head"><div><h2 style="margin:0;">' + nome + '</h2><p class="muted" style="margin:0.25rem 0 0;">' + qtd + ' cartas</p></div>';
-  html += '<div style="text-align:right;"><div class="muted">Total</div><div class="vitrine-total">' + formatMoney(total) + '</div></div></div>';
-  if (!publico && podeEditar() && deck.id) {
-    html += '<div style="margin-bottom:0.7rem;"><button class="secondary small" type="button" onclick="copiarLinkDeck(\'' + deck.id + '\')">Copiar link público</button> <span class="muted">' + esc(linkDeck(deck.id)) + '</span></div>';
-  }
-  html += '<div class="vitrine-board">';
-  gruposVitrine(deck).forEach(g => {
-    const sub = g.itens.reduce((s, it) => s + (precoItemDeck(it) || 0) * (parseInt(it.qtd, 10) || 1), 0);
-    const n = g.itens.reduce((s, it) => s + (parseInt(it.qtd, 10) || 1), 0);
-    html += '<section class="vitrine-col"><h3>' + esc(g.funcao) + ' · ' + n + '<br><span class="muted">' + formatMoney(sub) + '</span></h3>';
-    g.itens.forEach(it => {
-      const preco = precoItemDeck(it);
-      const q = parseInt(it.qtd, 10) || 1;
-      const fb = srcCarta(it, true).replace(/"/g, '');
-      html += '<div class="vitrine-tile card-name" data-modo="vitrine" data-nome="' + esc(it.nome) + '" data-set="' + esc(it.setCode || '') + '" data-edicao="' + esc(it.set || '') + '" data-cond="' + esc(it.cond || '') + '" data-extras="' + esc(it.extras || '') + '" data-preco="' + (preco == null ? '' : preco) + '" data-scryfall="' + esc(it.scryfallId || '') + '">';
-      html += '<img alt="' + esc(it.nome) + '" src="' + srcCarta(it, false) + '" onerror="if(!this.dataset.fb){this.dataset.fb=1;this.src=\'' + fb.replace(/'/g, '') + '\';}">';
-      if (it.extras) html += '<div class="extras-tag">' + esc(it.extras) + '</div>';
-      html += '<div class="nome">' + (q > 1 ? q + '× ' : '') + esc(it.nome) + '</div>';
-      html += '<div class="preco">' + (preco == null ? '—' : formatMoney(preco)) + '</div></div>';
-    });
-    html += '</section>';
-  });
-  html += '</div></article>';
-  return html;
-}
-
-async function renderVitrine() {
-  const el = document.getElementById('vitrineLista');
-  if (!el) return;
-  el.innerHTML = '<p class="muted">Carregando vitrine...</p>';
-  try {
-    const r = await fetch('/api/publico/vitrine');
-    const lista = await r.json();
-    if (!r.ok || !Array.isArray(lista)) { el.innerHTML = '<p class="muted">Não consegui carregar a vitrine.</p>'; return; }
-    if (!lista.length) { el.innerHTML = '<p class="muted">Nenhum deck na vitrine ainda.</p>'; return; }
-    el.innerHTML = lista.map(d => htmlDeckVitrine(d, false)).join('');
-  } catch (e) {
-    el.innerHTML = '<p class="muted">Não consegui carregar a vitrine.</p>';
-  }
-}
-
-async function abrirDeckPublico(id) {
-  const login = document.getElementById('telaLogin');
-  if (login) login.style.display = 'none';
-  const top = document.querySelector('.topbar');
-  if (top) top.style.display = 'none';
-  const main = document.querySelector('main');
-  if (main) main.style.display = 'none';
-  const box = document.getElementById('paginaPublica');
-  box.style.display = 'block';
-  box.innerHTML = '<p class="muted">Carregando deck...</p>';
-  try {
-    const r = await fetch('/api/publico/vitrine/' + encodeURIComponent(id));
-    const deck = await r.json();
-    if (!r.ok) { box.innerHTML = '<h2>Deck indisponível</h2><p>Este link não está mais na vitrine.</p>'; return; }
-    box.innerHTML = '<p class="muted" style="margin-top:0;">Cozinha Offline Store</p>' + htmlDeckVitrine(deck, true);
-  } catch (e) {
-    box.innerHTML = '<p>Não consegui abrir este deck.</p>';
-  }
 }
 
 const NOME_PAPEL = { admin: 'Administrador', socio: 'Sócio', cliente: 'Cliente' };
