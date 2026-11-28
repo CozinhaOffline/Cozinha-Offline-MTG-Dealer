@@ -127,7 +127,7 @@
   <img src="logo.png" alt="Cozinha Offline Store">
   <div>
     <h1>Cozinha Offline Store</h1>
-    <p>Gestão de estoque, pedidos e orçamentos · versão 26/11b</p>
+    <p>Gestão de estoque, pedidos e orçamentos · versão 28/11</p>
   </div>
   <div id="quemEsta" style="margin-left:auto;text-align:right;font-size:0.9rem;"></div>
 </header>
@@ -540,11 +540,7 @@
   <div id="vitrine" class="tab">
     <div class="card">
       <h2>Vitrine</h2>
-      <p class="muted">Decks à venda. O preço ao lado do nome é o total. Passe o mouse no card para ver a edição, o estado, os extras e o preço.</p>
-      <div class="vitrine-modos">
-        <button type="button" class="secondary small" id="btnVitrineLista" onclick="definirModoVitrine('lista')">Lista</button>
-        <button type="button" class="secondary small" id="btnVitrineGrid" onclick="definirModoVitrine('grid')">Grade</button>
-      </div>
+      <p class="muted">Cada deck é uma pasta. Clique para abrir a lista. O fundo da pasta é a arte do comandante.</p>
       <div id="vitrineLista"></div>
     </div>
   </div>
@@ -6121,10 +6117,6 @@ async function classificarItensPorFuncao(itens, titulo) {
     else if (card) funcao = funcaoDaCartaScryfall(card, titulo);
     it.funcao = funcao;
     it.categoria = funcao;
-    if (card) {
-      if (!it.scryfallId && card.id) it.scryfallId = card.id;
-      if (!it.setCode && card.set) it.setCode = card.set;
-    }
   });
 }
 
@@ -6172,12 +6164,12 @@ async function orcamentoParaDeck() {
 let vitrineModo = 'grid';
 let vitrineCache = [];
 let vitrineDeckAberto = null;
+let vitrinePastaId = null;
 try { vitrineModo = localStorage.getItem('vitrineModo') === 'lista' ? 'lista' : 'grid'; } catch (e) {}
 
 function marcarBotoesVitrine() {
-  document.querySelectorAll('#btnVitrineLista, #btnVitrineGrid, .btn-modo-vitrine').forEach(btn => {
-    const ativo = btn.dataset.modo === vitrineModo || (btn.id === 'btnVitrineLista' && vitrineModo === 'lista') || (btn.id === 'btnVitrineGrid' && vitrineModo === 'grid');
-    btn.classList.toggle('ativo', ativo);
+  document.querySelectorAll('.btn-modo-vitrine').forEach(btn => {
+    btn.classList.toggle('ativo', btn.dataset.modo === vitrineModo);
   });
 }
 
@@ -6185,24 +6177,77 @@ function definirModoVitrine(modo) {
   vitrineModo = modo === 'lista' ? 'lista' : 'grid';
   try { localStorage.setItem('vitrineModo', vitrineModo); } catch (e) {}
   const box = document.getElementById('paginaPublica');
-  if (box && box.style.display !== 'none' && vitrineDeckAberto) {
+  if (box && box.style.display === 'block' && vitrineDeckAberto) {
     box.innerHTML = '<p class="muted" style="margin-top:0;">Cozinha Offline Store</p>' + htmlDeckVitrine(vitrineDeckAberto, true);
+    marcarBotoesVitrine();
+    return;
   }
+  pintarVitrine();
+}
+
+function comandanteDoDeck(deck) {
+  const itens = deck.itens || [];
+  return itens.find(it => (it.funcao || it.categoria) === 'Comandante') || null;
+}
+
+function arteComandante(deck) {
+  const c = comandanteDoDeck(deck);
+  if (!c || !c.nome) return '';
+  const set = String(c.setCode || '').trim();
+  if (/^[a-zA-Z0-9]{3,6}$/.test(set)) {
+    return 'https://api.scryfall.com/cards/named?format=image&version=art_crop&exact=' + encodeURIComponent(c.nome) + '&set=' + encodeURIComponent(set.toLowerCase());
+  }
+  return 'https://api.scryfall.com/cards/named?format=image&version=art_crop&exact=' + encodeURIComponent(c.nome);
+}
+
+function htmlPastaVitrine(deck) {
+  const nome = esc(deck.nome || 'Deck');
+  const qtd = (deck.itens || []).reduce((s, it) => s + (parseInt(it.qtd, 10) || 1), 0);
+  const total = deck.total != null ? deck.total : totalDeck(deck);
+  const arte = arteComandante(deck).replace(/'/g, '');
+  const bg = arte
+    ? "background-image:linear-gradient(rgba(18,22,28,0.75),rgba(18,22,28,0.75)),url('" + arte + "');background-size:cover;background-position:center;"
+    : 'background:#1b2330;';
+  return '<div onclick="abrirPastaVitrine(\'' + deck.id + '\')" style="position:relative;display:inline-block;width:200px;min-height:124px;margin:0.4rem;padding:1rem;border-radius:10px;cursor:pointer;border:1px solid var(--borda);vertical-align:top;' + bg + '">' +
+    '<div style="font-weight:600;color:var(--azul);">' + nome + '</div>' +
+    '<div class="muted">' + qtd + ' cartas</div>' +
+    '<div class="muted">' + formatMoney(total) + '</div></div>';
+}
+
+function abrirPastaVitrine(id) {
+  vitrinePastaId = id;
+  pintarVitrine();
+}
+
+function fecharPastaVitrine() {
+  vitrinePastaId = null;
+  pintarVitrine();
+}
+
+function pintarVitrine() {
   const el = document.getElementById('vitrineLista');
-  if (el && vitrineCache.length) el.innerHTML = vitrineCache.map(d => htmlDeckVitrine(d, false)).join('');
+  if (!el) return;
+  if (!vitrineCache.length) { el.innerHTML = '<p class="muted">Nenhum deck na vitrine ainda.</p>'; return; }
+  if (!vitrinePastaId) {
+    el.innerHTML = vitrineCache.map(htmlPastaVitrine).join('');
+    return;
+  }
+  const deck = vitrineCache.find(d => d.id === vitrinePastaId);
+  if (!deck) { vitrinePastaId = null; pintarVitrine(); return; }
+  el.innerHTML = '<button class="secondary small" type="button" onclick="fecharPastaVitrine()">Voltar</button>' + htmlDeckVitrine(deck, false);
   marcarBotoesVitrine();
 }
 
 function htmlCartaVitrine(it) {
   const preco = precoItemDeck(it);
   const q = parseInt(it.qtd, 10) || 1;
-  const attrs = ' data-modo="vitrine" data-nome="' + esc(it.nome) + '" data-set="' + esc(it.setCode || '') + '" data-edicao="' + esc(it.set || '') + '" data-cond="' + esc(it.cond || '') + '" data-extras="' + esc(it.extras || '') + '" data-preco="' + (preco == null ? '' : preco) + '" data-scryfall="' + esc(it.scryfallId || '') + '"';
+  const attrs = ' data-modo="vitrine" data-nome="' + esc(it.nome) + '" data-setcode="' + esc(it.setCode || '') + '" data-set="' + esc(it.setCode || '') + '" data-edicao="' + esc(it.set || '') + '" data-cond="' + esc(it.cond || '') + '" data-extras="' + esc(it.extras || '') + '" data-preco="' + (preco == null ? '' : preco) + '" data-scryfall="' + esc(it.scryfallId || '') + '"';
   if (vitrineModo === 'lista') {
     return '<div class="vitrine-linha card-name"' + attrs + '><span class="esq">' + q + ' ' + esc(it.nome) + '</span><span class="preco">' + (preco == null ? '—' : formatMoney(preco)) + '</span></div>';
   }
-  const fb = srcCarta(it, true).replace(/"/g, '').replace(/'/g, '');
+  const fb = srcCarta(it, 'id').replace(/"/g, '').replace(/'/g, '');
   let html = '<div class="vitrine-tile card-name"' + attrs + '>';
-  html += '<img alt="' + esc(it.nome) + '" src="' + srcCarta(it, false) + '" onerror="if(!this.dataset.fb){this.dataset.fb=1;this.src=\'' + fb + '\';}">';
+  html += '<img alt="' + esc(it.nome) + '" src="' + srcCarta(it, 'set') + '" onerror="if(!this.dataset.fb){this.dataset.fb=1;this.src=\'' + fb + '\';}">';
   if (it.extras) html += '<div class="extras-tag">' + esc(it.extras) + '</div>';
   html += '<div class="nome">' + (q > 1 ? q + '× ' : '') + esc(it.nome) + '</div>';
   html += '<div class="preco">' + (preco == null ? '—' : formatMoney(preco)) + '</div></div>';
@@ -6216,9 +6261,7 @@ function htmlDeckVitrine(deck, publico) {
   let html = '<article class="card" style="margin-bottom:1.2rem;">';
   html += '<div class="vitrine-head"><div><h2 style="margin:0;">' + nome + '</h2><p class="muted" style="margin:0.25rem 0 0;">' + qtd + ' cartas</p></div>';
   html += '<div style="text-align:right;"><div class="muted">Total</div><div class="vitrine-total">' + formatMoney(total) + '</div></div></div>';
-  if (publico) {
-    html += '<div class="vitrine-modos"><button type="button" class="secondary small btn-modo-vitrine' + (vitrineModo === 'lista' ? ' ativo' : '') + '" data-modo="lista" onclick="definirModoVitrine(\'lista\')">Lista</button><button type="button" class="secondary small btn-modo-vitrine' + (vitrineModo === 'grid' ? ' ativo' : '') + '" data-modo="grid" onclick="definirModoVitrine(\'grid\')">Grade</button></div>';
-  }
+  html += '<div class="vitrine-modos"><button type="button" class="secondary small btn-modo-vitrine' + (vitrineModo === 'lista' ? ' ativo' : '') + '" data-modo="lista" onclick="definirModoVitrine(\'lista\')">Lista</button><button type="button" class="secondary small btn-modo-vitrine' + (vitrineModo === 'grid' ? ' ativo' : '') + '" data-modo="grid" onclick="definirModoVitrine(\'grid\')">Grade</button></div>';
   if (!publico && podeEditar() && deck.id) {
     html += '<div style="margin-bottom:0.7rem;"><button class="secondary small" type="button" onclick="copiarLinkDeck(\'' + deck.id + '\')">Copiar link público</button> <span class="muted">' + esc(linkDeck(deck.id)) + '</span></div>';
   }
@@ -6244,9 +6287,9 @@ async function renderVitrine() {
     const lista = await r.json();
     if (!r.ok || !Array.isArray(lista)) { el.innerHTML = '<p class="muted">Não consegui carregar a vitrine.</p>'; return; }
     vitrineCache = lista;
-    if (!lista.length) { el.innerHTML = '<p class="muted">Nenhum deck na vitrine ainda.</p>'; marcarBotoesVitrine(); return; }
-    el.innerHTML = lista.map(d => htmlDeckVitrine(d, false)).join('');
-    marcarBotoesVitrine();
+    vitrinePastaId = null;
+    if (!lista.length) { el.innerHTML = '<p class="muted">Nenhum deck na vitrine ainda.</p>'; return; }
+    pintarVitrine();
   } catch (e) {
     el.innerHTML = '<p class="muted">Não consegui carregar a vitrine.</p>';
   }
@@ -6289,11 +6332,39 @@ function gruposVitrine(deck) {
   }).map(f => ({ funcao: f, itens: grupos.get(f) }));
 }
 
-function srcCarta(it, semSet) {
-  if (!semSet && it.scryfallId && String(it.scryfallId).length > 10) return 'https://api.scryfall.com/cards/' + encodeURIComponent(it.scryfallId) + '?format=image&version=small';
-  let u = 'https://api.scryfall.com/cards/named?format=image&version=small&exact=' + encodeURIComponent(it.nome || '');
-  if (!semSet && it.setCode && String(it.setCode).length >= 3) u += '&set=' + encodeURIComponent(it.setCode);
-  return u;
+function srcCarta(it, modo) {
+  const nome = encodeURIComponent(it.nome || '');
+  const set = String(it.setCode || '').trim().toLowerCase();
+  const id = String(it.scryfallId || '');
+  if (modo === 'id' && id.length > 10) return 'https://api.scryfall.com/cards/' + encodeURIComponent(id) + '?format=image&version=small';
+  if (modo !== 'id' && /^[a-z0-9]{3,6}$/.test(set)) {
+    return 'https://api.scryfall.com/cards/named?format=image&version=small&exact=' + nome + '&set=' + encodeURIComponent(set);
+  }
+  if (id.length > 10) return 'https://api.scryfall.com/cards/' + encodeURIComponent(id) + '?format=image&version=small';
+  return 'https://api.scryfall.com/cards/named?format=image&version=small&exact=' + nome;
+}
+
+async function cartaScryfallDaVersao(card) {
+  const nome = card.nome || '';
+  const setCode = String(card.setCode || '').trim().toLowerCase();
+  if (/^[a-z0-9]{3,6}$/.test(setCode)) {
+    const r = await fetch('https://api.scryfall.com/cards/named?exact=' + encodeURIComponent(nome) + '&set=' + encodeURIComponent(setCode));
+    if (r.ok) return r.json();
+  }
+  const edicao = String(card.set || '').trim();
+  if (edicao.length > 3) {
+    const q = '!"' + nome.replace(/"/g, '') + '" e:"' + edicao.replace(/"/g, '') + '"';
+    const r = await fetch('https://api.scryfall.com/cards/search?unique=prints&q=' + encodeURIComponent(q));
+    if (r.ok) {
+      const data = await r.json();
+      if (data.data && data.data[0]) return data.data[0];
+    }
+  }
+  if (card.scryfallId && String(card.scryfallId).length > 10) {
+    const r = await fetch('https://api.scryfall.com/cards/' + encodeURIComponent(card.scryfallId));
+    if (r.ok) return r.json();
+  }
+  return null;
 }
 
 const NOME_PAPEL = { admin: 'Administrador', socio: 'Sócio', cliente: 'Cliente' };
@@ -6462,7 +6533,7 @@ document.addEventListener('mouseover', async function(e) {
   if (!td) return;
   const nome = td.dataset.nome || td.textContent.trim();
   if (!nome) return;
-  const setCode = td.dataset.set || '';
+  const setCode = td.dataset.setcode || td.dataset.set || '';
   let card = null;
   if (td.dataset.modo === 'vitrine') {
     const preco = td.dataset.preco === '' ? null : Number(td.dataset.preco);
@@ -6510,40 +6581,32 @@ document.addEventListener('mouseover', async function(e) {
     posicionar();
 
     try {
-      let url;
-      if (card.scryfallId && card.scryfallId.length > 10) {
-        url = `https://api.scryfall.com/cards/${card.scryfallId}`;
-      } else {
-        url = `https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(nome)}`;
-        let setParam = card.setCode || '';
-        if (!setParam && card.set) {
-          const m = card.set.match(/\(([a-z0-9]{3,5})\)/i);
-          if (m) setParam = m[1].toLowerCase();
-        }
-        if (setParam && setParam.length >= 3) {
-          url += `&set=${encodeURIComponent(setParam)}`;
-        }
-      }
-      const resp = await fetch(url);
-      if (resp.ok) {
-        const data = await resp.json();
-        const img = data.image_uris?.normal || data.card_faces?.[0]?.image_uris?.normal;
-        if (img) {
-          const setInfo = data.set_name ? `<br><span class="muted">${data.set_name} (${data.set.toUpperCase()})</span>` : '';
-          cardPopup.innerHTML = `<img src="${img}" alt="${nome}" onload="this.closest('.card-popup') && window.__repositionPopup && window.__repositionPopup()">` + linhaCardPopup(card, setInfo);
-          window.__repositionPopup = posicionar;
-          setTimeout(posicionar, 50);
-        }
-      } else if (card.setCode) {
-        const fallback = await fetch(`https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(nome)}`);
-        if (fallback.ok) {
-          const data = await fallback.json();
-          const img = data.image_uris?.normal || data.card_faces?.[0]?.image_uris?.normal;
-          if (img) {
-            cardPopup.innerHTML = `<img src="${img}" alt="${nome}">` + linhaCardPopup(card, '<br><span class="muted">Edição mais recente</span>');
-            setTimeout(posicionar, 50);
+      let data = null;
+      if (card.vitrine) data = await cartaScryfallDaVersao(card);
+      else {
+        let url;
+        if (card.scryfallId && card.scryfallId.length > 10) {
+          url = `https://api.scryfall.com/cards/${card.scryfallId}`;
+        } else {
+          url = `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(nome)}`;
+          let setParam = card.setCode || '';
+          if (!setParam && card.set) {
+            const m = String(card.set).match(/\(([a-z0-9]{3,5})\)/i);
+            if (m) setParam = m[1].toLowerCase();
           }
+          if (setParam && setParam.length >= 3) url += `&set=${encodeURIComponent(setParam)}`;
         }
+        const resp = await fetch(url);
+        if (resp.ok) data = await resp.json();
+      }
+      const img = data && (data.image_uris?.normal || data.card_faces?.[0]?.image_uris?.normal);
+      if (img) {
+        const setInfo = data.set_name ? `<br><span class="muted">${data.set_name} (${String(data.set || '').toUpperCase()})</span>` : '';
+        cardPopup.innerHTML = `<img src="${img}" alt="${nome}" onload="this.closest('.card-popup') && window.__repositionPopup && window.__repositionPopup()">` + linhaCardPopup(card, setInfo);
+        window.__repositionPopup = posicionar;
+        setTimeout(posicionar, 50);
+      } else {
+        cardPopup.innerHTML = linhaCardPopup(card) + '<br><span class="muted">Imagem desta edição indisponível</span>';
       }
     } catch (err) {
       cardPopup.innerHTML = linhaCardPopup(card) + '<br><span class="muted">Imagem indisponível</span>';
